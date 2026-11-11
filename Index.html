@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <?!= include('Styles') ?>
+</head>
+<body>
+
+  <!-- ============ LOGIN ============ -->
+  <section id="login" class="login hidden">
+    <div class="login-art">
+      <div class="brand-box" id="loginBrand"></div>
+      <div class="login-copy">
+        <div class="eyebrow light">Portal del equipo</div>
+        <h1>Todo el trabajo del equipo, en un solo lugar.</h1>
+        <p>Máquinas, guías de funcionamiento, documentación, reuniones y tareas de Pisquera de Chile.</p>
+      </div>
+      <div class="login-foot">Acceso exclusivo para personal autorizado</div>
+    </div>
+
+    <div class="login-form-wrap">
+      <div class="login-form">
+        <div class="tabs hidden" id="accesoTabs" role="tablist" aria-label="Acceso">
+          <button type="button" role="tab" id="tabLogin" aria-controls="loginForm" aria-selected="true">Iniciar sesión</button>
+          <button type="button" role="tab" id="tabRegistro" aria-controls="registroForm" aria-selected="false">Registrarse</button>
+        </div>
+        <div class="notice-sm hidden" id="loginMsg"></div>
+
+        <form class="acceso" id="loginForm" role="tabpanel" aria-labelledby="tabLogin" autocomplete="on">
+          <div>
+            <div class="eyebrow">Intranet</div>
+            <h2>Iniciar sesión</h2>
+            <p class="muted">Ingresa con tu correo y contraseña.</p>
+          </div>
+          <label class="fld">
+            <span>Correo</span>
+            <input name="email" type="email" required autocomplete="username" placeholder="nombre@empresa.cl">
+          </label>
+          <label class="fld">
+            <span>Contraseña</span>
+            <div class="pass">
+              <input name="password" type="password" required autocomplete="current-password" placeholder="••••••••">
+              <button type="button" class="icon-btn" data-ver title="Mostrar contraseña" aria-label="Mostrar contraseña"></button>
+            </div>
+          </label>
+          <div class="form-err" id="loginErr" role="alert"></div>
+          <button class="btn btn-primary btn-block" type="submit">Ingresar</button>
+          <p class="muted sm center">¿Olvidaste tu contraseña? Pide al administrador que la restablezca.</p>
+          <p class="muted sm center cambio hidden" data-solo-registro>¿No tienes cuenta? <button type="button" class="link-btn" data-tab="registro">Regístrate</button></p>
+        </form>
+
+        <form class="acceso hidden" id="registroForm" role="tabpanel" aria-labelledby="tabRegistro" autocomplete="on" novalidate>
+          <div>
+            <div class="eyebrow">Intranet</div>
+            <h2>Crear cuenta</h2>
+            <p class="muted">Tu cuenta comienza con acceso de consulta. Un administrador puede ampliarlo.</p>
+          </div>
+          <label class="fld"><span>Nombre completo</span><input name="nombre" required maxlength="80" autocomplete="name"></label>
+          <div class="fila2">
+            <label class="fld"><span>Correo</span><input name="email" type="email" required autocomplete="username" placeholder="nombre@empresa.cl"></label>
+            <label class="fld"><span>Área</span><input name="area" maxlength="60" placeholder="Ej.: Envasado"></label>
+          </div>
+          <label class="fld">
+            <span>Contraseña</span>
+            <div class="pass">
+              <input name="password" type="password" required minlength="8" autocomplete="new-password" aria-describedby="regAyuda">
+              <button type="button" class="icon-btn" data-ver title="Mostrar contraseña" aria-label="Mostrar contraseña"></button>
+            </div>
+            <small id="regAyuda">Mínimo 8 caracteres, con letras y números.</small>
+          </label>
+          <label class="fld"><span>Repite la contraseña</span><input name="confirmar" type="password" required minlength="8" autocomplete="new-password"></label>
+          <div class="form-err" id="registroErr" role="alert"></div>
+          <button class="btn btn-primary btn-block" type="submit">Crear cuenta</button>
+          <p class="muted sm center cambio">¿Ya tienes cuenta? <button type="button" class="link-btn" data-tab="login">Inicia sesión</button></p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ APLICACIÓN ============ -->
+  <div id="app" class="shell hidden">
+    <aside class="sb" id="sb">
+      <div class="sb-top">
+        <div class="brand-box" id="brand"></div>
+        <button class="sb-toggle" id="sbToggle" title="Contraer menú"></button>
+      </div>
+      <nav id="nav" class="nav"></nav>
+      <div class="sb-user">
+        <div class="avatar" id="avatar"></div>
+        <div class="who">
+          <b id="uNombre"></b>
+          <span id="uRol"></span>
+        </div>
+        <button class="sb-logout" id="btnLogout" title="Cerrar sesión"></button>
+      </div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+
+    <main class="main" id="main">
+      <div class="mobile-top">
+        <button class="icon-btn" id="menuBtn" title="Menú"></button>
+        <span>Intranet · Pisquera de Chile</span>
+      </div>
+      <div class="content" id="view"></div>
+      <footer class="pie">
+        <span>© <span id="anio"></span> Pisquera de Chile S.A. · CCU</span>
+        <span class="pie-sep" aria-hidden="true">·</span>
+        <button type="button" class="pie-acerca" data-act="acerca"><span id="icInfo"></span>Acerca de este sistema</button>
+      </footer>
+    </main>
+  </div>
+
+  <div id="modal" class="modal hidden"></div>
+  <div id="toast" class="toast"></div>
+
+  <script>const CFG = <?!= cfg ?>;</script>
+  <?!= include('App') ?>
+</body>
+</html>

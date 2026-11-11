@@ -1,0 +1,1134 @@
+<script>
+/* =====================================================================
+ * INTRANET PISQUERA DE CHILE · Cliente
+ * ===================================================================*/
+const S = { token: null, user: null, view: 'inicio', params: {}, cache: {}, rid: 0, cal: null, mesCache: {}, recTimers: [], avisados: new Set(), filtroTareas: 'mias', qTareas: '' };
+const RANK = { lector: 1, editor: 2, admin: 3 };
+const ROL_TXT = { admin: 'Administrador', editor: 'Editor', lector: 'Lector' };
+const AREAS = ['Envasado', 'Destilación', 'Fermentación', 'Recepción', 'Bodega', 'Utilidades'];
+const TIPOS_DOC = ['Manual de operación', 'Ficha técnica', 'Procedimiento', 'Plano', 'Registro'];
+const ESTADOS_GUIA = ['Borrador', 'En revisión', 'Publicada'];
+const ESTADOS_MAQ = ['Operativa', 'En mantención', 'Fuera de servicio'];
+const ESTADOS_TAREA = ['Pendiente', 'En curso', 'Completada'];
+const COLUMNAS = { 'Pendiente': ['#8A97AD', 'Iniciar'], 'En curso': ['#D39A32', 'Completar'], 'Completada': ['#6E8F1A', ''] };
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+/* Datos del modal "Acerca de este sistema": agrega el rol de cada persona y el correo de soporte si quieres. */
+const ACERCA = {
+  version: '1.0',
+  creditos: [
+    { nombre: 'Javier Catalán', rol: '' },
+    { nombre: 'Claudio Palta', rol: '' },
+    { nombre: 'Benjamin Cuello', rol: '' }
+  ],
+  soporte: ''
+};
+
+/* ---------- Utilidades ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const norm = s => String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const can = r => !!S.user && RANK[S.user.rol] >= RANK[r];
+const uniq = a => [...new Set(a.filter(Boolean))].sort();
+const iniciales = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase();
+const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+const vacio = msg => `<div class="empty">${esc(msg)}</div>`;
+
+const I = {
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>',
+  machine: '<rect x="3" y="7" width="18" height="10" rx="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="12" r="2"/><path d="M6 17v3M18 17v3M9 4h6M12 4v3"/>',
+  guide: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
+  doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c1.8.7 3 2.5 3.5 5.5"/>',
+  logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 8l-4 4 4 4M6 12h10"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+  back: '<path d="M15 6l-6 6 6 6"/>',
+  panel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15.5 9.5 13 12l2.5 2.5"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/>',
+  ext: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="M8 14h3v3H8z"/>',
+  tasks: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.5 1.5L7.5 5M3.5 12l1.5 1.5L7.5 11"/><circle cx="5" cy="18" r="1.2"/>',
+  next: '<path d="m9 6 6 6-6 6"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.1"/>',
+  grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>'
+};
+
+/* ---------- Fechas ---------- */
+const dos = n => String(n).padStart(2, '0');
+const claveDia = d => d.getFullYear() + '-' + dos(d.getMonth() + 1) + '-' + dos(d.getDate());
+const hoyClave = () => claveDia(new Date());
+const deClave = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+const hora = iso => { const d = new Date(iso); return dos(d.getHours()) + ':' + dos(d.getMinutes()); };
+const rango = r => r.todoElDia ? 'Todo el día' : hora(r.inicio) + ' – ' + hora(r.fin);
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+const ddmm = k => k ? k.slice(8, 10) + '/' + k.slice(5, 7) : '';
+const ic = (n, s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
+
+/* ---------- Comunicación con el servidor ---------- */
+function run(fn, ...args) {
+  return new Promise((ok, ko) => {
+    const r = google.script.run
+      .withSuccessHandler(r => {
+        let o;
+        try { o = JSON.parse(r); } catch (e) { return ko(new Error('Respuesta inválida del servidor.')); }
+        o.ok ? ok(o) : ko(Object.assign(new Error(o.error || 'Ocurrió un error.'), { expirada: !!o.expirada }));
+      })
+      .withFailureHandler(e => ko(new Error((e && e.message) || 'No se pudo conectar con el servidor.')));
+    if (typeof r[fn] !== 'function') {
+      console.error('Función del servidor no encontrada: ' + fn);
+      return ko(new Error('El servidor no tiene la función «' + fn + '». Revisa que Código.gs esté actualizado y vuelve a implementar.'));
+    }
+    r[fn](...args);
+  });
+}
+
+async function call(accion, datos) {
+  try {
+    const o = await run('api', S.token, accion, datos || {});
+    return o.data;
+  } catch (e) {
+    if (e.expirada) { salir('Tu sesión expiró. Vuelve a ingresar.'); e.message = 'Sesión expirada.'; }
+    throw e;
+  }
+}
+
+const store = {
+  get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (e) {} }
+};
+
+/* ---------- Sesión ---------- */
+function marcaHTML() {
+  const logo = CFG.logo
+    ? `<img class="logo-img" src="${esc(CFG.logo)}" alt="Pisquera de Chile">`
+    : `<div class="logo-txt"><b>PISQUERA</b><b>DE CHILE</b></div>`;
+  return logo + `<div class="brand-sub">INTRANET</div>`;
+}
+
+function mostrarLogin(msg) {
+  $('#app').classList.add('hidden');
+  $('#login').classList.remove('hidden');
+  const m = $('#loginMsg');
+  m.textContent = msg || '';
+  m.classList.toggle('hidden', !msg);
+  mostrarTab('login');
+}
+
+function mostrarTab(cual) {
+  const reg = cual === 'registro' && CFG.registro;
+  $('#tabLogin').setAttribute('aria-selected', String(!reg));
+  $('#tabRegistro').setAttribute('aria-selected', String(reg));
+  $('#loginForm').classList.toggle('hidden', reg);
+  $('#registroForm').classList.toggle('hidden', !reg);
+  $('#loginErr').textContent = ''; $('#registroErr').textContent = '';
+  const f = reg ? $('#registroForm') : $('#loginForm');
+  setTimeout(() => { const i = [...f.querySelectorAll('input')].find(x => !x.value) || f.querySelector('input'); i.focus(); }, 50);
+}
+
+async function onRegistro(ev) {
+  ev.preventDefault();
+  const f = ev.target, btn = $('button[type=submit]', f), err = $('#registroErr');
+  err.textContent = '';
+  if (!f.nombre.value.trim() || !f.email.value.trim() || !f.password.value) { err.textContent = 'Completa nombre, correo y contraseña.'; return; }
+  if (f.password.value !== f.confirmar.value) { err.textContent = 'Las contraseñas no coinciden.'; f.confirmar.focus(); return; }
+  btn.disabled = true; btn.textContent = 'Creando cuenta…';
+  try {
+    const o = await run('registrarse', Object.fromEntries(new FormData(f)));
+    f.reset();
+    entrar(o.token, o.usuario);
+    toast('¡Cuenta creada! Bienvenido a la intranet.');
+  } catch (e) {
+    err.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Crear cuenta';
+  }
+}
+
+function entrar(token, usuario) {
+  S.token = token; S.user = usuario; S.cache = {};
+  store.set('pq_t', token);
+  $('#login').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  $('#avatar').textContent = iniciales(usuario.nombre);
+  $('#uNombre').textContent = usuario.nombre;
+  $('#uRol').textContent = ROL_TXT[usuario.rol] + (usuario.area ? ' · ' + usuario.area : '');
+  pintarNav();
+  go('inicio');
+  programarRecordatorios();
+  clearInterval(S.recInt);
+  S.recInt = setInterval(programarRecordatorios, 15 * 60000);
+}
+
+function salir(msg) {
+  if (S.token) run('logout', S.token).catch(() => {});
+  S.token = null; S.user = null; S.cache = {};
+  clearInterval(S.recInt); (S.recTimers || []).forEach(clearTimeout); S.recTimers = [];
+  S.cal = null; S.mesCache = {};
+  store.set('pq_t', null);
+  cerrarModal();
+  mostrarLogin(msg);
+}
+
+async function onLogin(ev) {
+  ev.preventDefault();
+  const f = ev.target, btn = $('button[type=submit]', f), err = $('#loginErr');
+  err.textContent = '';
+  $('#loginMsg').classList.add('hidden');
+  btn.disabled = true; btn.textContent = 'Ingresando…';
+  try {
+    const o = await run('login', f.email.value, f.password.value);
+    f.reset();
+    entrar(o.token, o.usuario);
+  } catch (e) {
+    err.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Ingresar';
+  }
+}
+
+/* ---------- Navegación ---------- */
+const NAV = [
+  { v: 'inicio', t: 'Inicio', i: 'home' },
+  { v: 'maquinas', t: 'Máquinas', i: 'machine' },
+  { v: 'guias', t: 'Guías de Funcionamiento', i: 'guide' },
+  { v: 'documentos', t: 'Documentación', i: 'doc' },
+  { v: 'reuniones', t: 'Reuniones', i: 'cal' },
+  { v: 'tareas', t: 'Tareas', i: 'tasks' },
+  { v: 'perfil', t: 'Mi Perfil', i: 'user' },
+  { v: 'usuarios', t: 'Usuarios y accesos', i: 'users', rol: 'admin' }
+];
+
+function pintarNav() {
+  $('#nav').innerHTML = NAV.filter(n => !n.rol || can(n.rol)).map(n =>
+    (n.rol ? '<div class="nav-sep">ADMINISTRACIÓN</div>' : '') +
+    `<a class="nav-i" data-go="${n.v}" data-nav="${n.v}" title="${esc(n.t)}">${ic(n.i)}<span>${esc(n.t)}</span></a>`
+  ).join('');
+}
+
+function marcarNav(v) {
+  const k = { maquina: 'maquinas', guia: 'guias', buscar: 'inicio' }[v] || v;
+  document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === k));
+}
+
+const cerrarMenu = () => $('#app').classList.remove('menu-open');
+const refrescar = () => go(S.view, S.params);
+
+async function go(view, params = {}) {
+  if (!S.user) return;
+  if (!VIEWS[view] || (view === 'usuarios' && !can('admin'))) view = 'inicio';
+  S.view = view; S.params = params;
+  marcarNav(view); cerrarMenu();
+  const id = ++S.rid, el = $('#view');
+  el.innerHTML = '<div class="loading"><span></span><span></span><span></span></div>';
+  $('#main').scrollTop = 0;
+  try {
+    const r = await VIEWS[view](params);
+    if (id !== S.rid) return;
+    el.innerHTML = typeof r === 'string' ? r : r.html;
+    if (r.after) r.after(el);
+  } catch (e) {
+    if (id !== S.rid || !S.user) return;
+    el.innerHTML = `<div class="empty err">${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------- Componentes ---------- */
+const head = (eyebrow, titulo, lead, extra = '') =>
+  `<div class="page-head"><div><div class="eyebrow">${esc(eyebrow)}</div><h1>${esc(titulo)}</h1>${lead ? `<p class="lead">${esc(lead)}</p>` : ''}</div>${extra}</div>`;
+
+const searchBox = (v = '') =>
+  `<form class="search" data-search>${ic('search', 20)}<input name="q" value="${esc(v)}" placeholder="Buscar en la intranet" autocomplete="off"></form>`;
+
+const demoBanner = () => CFG.demo
+  ? '<div class="notice"><b>Solo demostración.</b> Datos y documentos ficticios. No utilizar para operar, mantener o intervenir equipos.</div>' : '';
+
+const badgeClase = c => `<span class="badge ${c === 'A' ? 'b-pink' : c === 'B' ? 'b-gray' : 'b-blue'}">Clase ${esc(c)}</span>`;
+const badgeEstado = e => `<span class="badge ${e === 'Publicada' ? 'b-green' : e === 'En revisión' ? 'b-amber' : 'b-pink'}">${esc(e)}</span>`;
+const badgeRol = r => `<span class="badge ${r === 'admin' ? 'b-pink' : r === 'editor' ? 'b-blue' : 'b-gray'}">${esc(ROL_TXT[r] || r)}</span>`;
+const btnIcon = (act, id, i, t) => `<button class="icon-btn" data-act="${act}" data-id="${esc(id)}" title="${esc(t)}">${ic(i, 18)}</button>`;
+
+function cardMaquina(m) {
+  return `<article class="card item" data-go="maquina" data-id="${esc(m.id)}">
+    <div class="item-top"><span class="code">${esc(m.id)}</span>${badgeClase(m.clase)}</div>
+    <h3>${esc(m.nombre)}</h3>
+    <p class="desc">${esc(m.descripcion)}</p>
+    <div class="item-foot"><span>${esc(m.area)} · ${plural(Number(m.nGuias) || 0, 'guía', 'guías')}</span><span class="lnk">Ver ficha →</span></div>
+  </article>`;
+}
+
+function cardGuia(g) {
+  return `<article class="card item" data-go="guia" data-id="${esc(g.id)}">
+    <div class="item-top"><span class="code">${esc(g.id)}</span>${badgeEstado(g.estado)}</div>
+    <h3>${esc(g.titulo)}</h3>
+    <p class="desc">${esc(g.area)} · ${esc(g.maquinaId)}</p>
+    <div class="item-foot"><span>Versión ${esc(g.version)}</span><span class="lnk">Consultar guía →</span></div>
+  </article>`;
+}
+
+/* ---------- Vista en tarjetas o listado ---------- */
+const vistaDe = k => store.get('pq_v_' + k) === 'lista' ? 'lista' : 'tarjetas';
+const selectorVista = k => `<div class="seg" role="group" aria-label="Tipo de vista" id="vSel">
+  <button type="button" data-v="tarjetas" aria-pressed="${vistaDe(k) === 'tarjetas'}" title="Ver como tarjetas">${ic('grid', 18)}<span>Tarjetas</span></button>
+  <button type="button" data-v="lista" aria-pressed="${vistaDe(k) === 'lista'}" title="Ver como listado">${ic('list', 18)}<span>Listado</span></button></div>`;
+function enlazarVista(k, pintar) {
+  $('#vSel').addEventListener('click', e => {
+    const b = e.target.closest('[data-v]'); if (!b) return;
+    store.set('pq_v_' + k, b.dataset.v);
+    $('#vSel').querySelectorAll('[data-v]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    pintar();
+  });
+}
+const fechaCorta = f => /^\d{4}-\d{2}-\d{2}/.test(f || '') ? f.slice(8, 10) + '/' + f.slice(5, 7) + '/' + f.slice(0, 4) : (f || '—');
+
+function tablaMaquinas(lista) {
+  return `<div class="card table-wrap"><table class="tbl tbl-lista">
+    <thead><tr><th>Máquina</th><th>Área</th><th>Clase</th><th>Estado</th><th>Guías</th><th>Documentos</th><th></th></tr></thead>
+    <tbody>${lista.map(m => `<tr data-go="maquina" data-id="${esc(m.id)}" tabindex="0">
+      <td><div class="celda-nom"><div class="tile-s t-blue">${ic('machine', 18)}</div><div><b>${esc(m.nombre)}</b><span class="code">${esc(m.id)}</span></div></div></td>
+      <td>${esc(m.area)}</td><td>${badgeClase(m.clase)}</td>
+      <td style="white-space:nowrap"><span class="dot ${m.estado === 'Operativa' ? 'on' : 'off'}"></span>${esc(m.estado || '—')}</td>
+      <td>${Number(m.nGuias) || 0}</td><td>${Number(m.nDocs) || 0}</td>
+      <td class="row-acts"><span class="lnk">Ver ficha →</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+function tablaGuias(lista) {
+  return `<div class="card table-wrap"><table class="tbl tbl-lista">
+    <thead><tr><th>Guía</th><th>Área</th><th>Versión</th><th>Estado</th><th>Actualizada</th><th></th></tr></thead>
+    <tbody>${lista.map(g => `<tr data-go="guia" data-id="${esc(g.id)}" tabindex="0">
+      <td><div class="celda-nom"><div class="tile-s t-green">${ic('guide', 18)}</div><div><b>${esc(g.titulo)}</b><span class="code">${esc(g.id)} · ${esc(g.maquinaNombre || g.maquinaId)}</span></div></div></td>
+      <td>${esc(g.area)}</td><td>${esc(g.version)}</td><td>${badgeEstado(g.estado)}</td><td class="muted">${fechaCorta(g.actualizado)}</td>
+      <td class="row-acts"><span class="lnk">Consultar →</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+function linkDoc(d) {
+  return /^https:\/\//i.test(d.url)
+    ? `<a class="btn btn-sm" href="${esc(d.url)}" target="_blank" rel="noopener">Abrir ${ic('ext', 15)}</a>`
+    : '<span class="muted sm">Sin archivo</span>';
+}
+
+function tablaDocs(docs, conMaquina = true) {
+  if (!docs.length) return vacio('No hay documentos para mostrar.');
+  return `<div class="card table-wrap"><table class="tbl">
+    <thead><tr><th>Código</th><th>Documento</th><th>Tipo</th>${conMaquina ? '<th>Máquina</th>' : ''}<th>Versión</th><th>Actualizado</th><th></th></tr></thead>
+    <tbody>${docs.map(d => `<tr>
+      <td class="code">${esc(d.id)}</td>
+      <td><b>${esc(d.titulo)}</b></td>
+      <td><span class="chip">${esc(d.tipo)}</span></td>
+      ${conMaquina ? `<td><a class="lnk" data-go="maquina" data-id="${esc(d.maquinaId)}">${esc(d.maquinaId)}</a></td>` : ''}
+      <td>${esc(d.version)}</td>
+      <td class="muted">${esc(d.actualizado)}</td>
+      <td class="row-acts">${linkDoc(d)}${can('editor') ? btnIcon('editarDocumento', d.id, 'edit', 'Editar') : ''}${can('admin') ? btnIcon('eliminarDocumento', d.id, 'trash', 'Eliminar') : ''}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+// Formato simple para el contenido de las guías: "## Título", "- viñeta", **negrita**
+function md(t) {
+  let out = '', lista = false;
+  esc(t).split('\n').forEach(l => {
+    if (/^\s*- /.test(l)) {
+      if (!lista) { out += '<ul>'; lista = true; }
+      out += '<li>' + l.replace(/^\s*- /, '') + '</li>';
+      return;
+    }
+    if (lista) { out += '</ul>'; lista = false; }
+    if (l.startsWith('## ')) out += '<h3>' + l.slice(3) + '</h3>';
+    else if (l.trim()) out += '<p>' + l + '</p>';
+  });
+  if (lista) out += '</ul>';
+  return out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+/* ---------- Vistas ---------- */
+const VIEWS = {
+  async inicio() {
+    const d = await call('inicio'), s = d.stats;
+    const nombre = String(S.user.nombre).split(' ')[0];
+    const mods = [
+      ['maquinas', 'machine', 't-blue', 'Máquinas', 'Catálogo de equipos con su clase, área y estado.', plural(s.maquinas, 'máquina', 'máquinas')],
+      ['guias', 'guide', 't-green', 'Guías de Funcionamiento', 'Principios de funcionamiento de cada máquina.', plural(s.guias, 'guía disponible', 'guías disponibles')],
+      ['documentos', 'doc', 't-amber', 'Documentación', 'Manuales, fichas técnicas y procedimientos.', plural(s.documentos, 'documento', 'documentos')],
+      ['reuniones', 'cal', 't-green', 'Reuniones', 'Agenda del equipo y reuniones en las que participas.', plural(d.reuniones.length, 'próxima reunión', 'próximas reuniones')],
+      ['tareas', 'tasks', 't-blue', 'Tareas', 'Tus pendientes, responsables y fechas de entrega.', plural(d.tareas.length, 'tarea pendiente', 'tareas pendientes')],
+      ['perfil', 'user', 't-pink', 'Mi Perfil', 'Tus datos, área y preferencias de cuenta.', 'Rol: ' + ROL_TXT[S.user.rol]]
+    ];
+    S.cache.inicioTareas = d.tareas;
+    return `
+      ${head('Inicio', `Hola, ${nombre}.`, 'Bienvenido a la intranet de Pisquera de Chile. ¿Qué necesitas hoy?', searchBox())}
+      ${demoBanner()}
+      <div class="modules">${mods.map(m => `
+        <a class="mod" data-go="${m[0]}">
+          <div class="tile ${m[2]}">${ic(m[1], 26)}</div>
+          <h3>${m[3]}</h3>
+          <p>${m[4]}</p>
+          <div class="meta-s">${esc(m[5])}</div>
+          <span class="lnk">Ir al módulo →</span>
+        </a>`).join('')}
+      </div>
+
+`;
+  },
+
+  async reuniones() {
+    if (!S.cal) { const h = new Date(); S.cal = { y: h.getFullYear(), m: h.getMonth(), sel: hoyClave() }; }
+    return {
+      html: head('Agenda del equipo', 'Reuniones', 'Reuniones del calendario del equipo. Las invitaciones llegan a tu correo y a tu Google Calendar.',
+        `<button class="btn btn-primary" data-act="nuevaReunion">${ic('plus', 18)} Agendar reunión</button>`) + `
+        <div class="agenda">
+          <section class="card cal" aria-label="Calendario">
+            <div class="cal-cab">
+              <h2 id="mesLabel" aria-live="polite"></h2>
+              <div class="cal-nav">
+                <button class="btn btn-sm" id="calHoy">Hoy</button>
+                <button class="btn btn-sm" id="calPrev" aria-label="Mes anterior">${ic('back', 18)}</button>
+                <button class="btn btn-sm" id="calNext" aria-label="Mes siguiente">${ic('next', 18)}</button>
+              </div>
+            </div>
+            <div class="cal-sem" aria-hidden="true"><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div>
+            <div class="cal-grid" id="calGrid"></div>
+          </section>
+          <section class="card dia-panel" aria-label="Reuniones del día">
+            <div><div class="eyebrow">Día seleccionado</div><h2 id="diaLabel"></h2></div>
+            <button class="btn btn-primary" data-act="nuevaReunion" id="btnReunionDia" style="justify-content:center">${ic('plus', 18)} Agendar este día</button>
+            <div id="diaLista" style="display:flex;flex-direction:column;gap:12px"></div>
+          </section>
+        </div>`,
+      after() {
+        $('#calGrid').addEventListener('click', e => {
+          const b = e.target.closest('[data-dia]'); if (!b) return;
+          const d = deClave(b.dataset.dia);
+          S.cal.sel = b.dataset.dia;
+          if (d.getMonth() !== S.cal.m || d.getFullYear() !== S.cal.y) { S.cal.y = d.getFullYear(); S.cal.m = d.getMonth(); cargarMes(); }
+          else { pintarCal(); pintarDia(); }
+        });
+        const mover = n => { const d = new Date(S.cal.y, S.cal.m + n, 1); S.cal.y = d.getFullYear(); S.cal.m = d.getMonth(); cargarMes(); };
+        $('#calPrev').onclick = () => mover(-1);
+        $('#calNext').onclick = () => mover(1);
+        $('#calHoy').onclick = () => { const h = new Date(); S.cal = { y: h.getFullYear(), m: h.getMonth(), sel: hoyClave() }; cargarMes(); };
+        cargarMes();
+      }
+    };
+  },
+
+  async tareas() {
+    const lista = await call('tareas');
+    S.cache.tareas = lista;
+    return {
+      html: head('Organización', 'Tareas', 'Tus pendientes, responsables y fechas de entrega.',
+        `<button class="btn btn-primary" data-act="nuevaTarea">${ic('plus', 18)} Nueva tarea</button>`) + `
+        <div class="toolbar">
+          <div class="field-s">${ic('search', 18)}<input id="tQ" placeholder="Buscar tareas por nombre o responsable" value="${esc(S.qTareas)}"></div>
+          <div class="seg" role="group" aria-label="Filtrar tareas" id="tFiltro">
+            <button data-f="mias">Asignadas a mí</button><button data-f="delegadas">Delegadas</button><button data-f="todas">Todas</button>
+          </div>
+        </div>
+        <div class="tablero" id="tablero"></div>`,
+      after() {
+        $('#tQ').addEventListener('input', e => { S.qTareas = e.target.value; pintarTablero(); });
+        $('#tFiltro').addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (b) { S.filtroTareas = b.dataset.f; pintarTablero(); } });
+        pintarTablero();
+      }
+    };
+  },
+
+  async buscar({ q }) {
+    const r = await call('buscar', { q });
+    const total = r.maquinas.length + r.guias.length + r.documentos.length;
+    return head('Búsqueda', `Resultados para “${q}”`, plural(total, 'resultado', 'resultados') + ' en la intranet.', searchBox(q)) +
+      (r.maquinas.length ? `<div class="sec-head"><h2>Máquinas</h2></div><div class="grid3">${r.maquinas.map(cardMaquina).join('')}</div>` : '') +
+      (r.guias.length ? `<div class="sec-head"><h2>Guías</h2></div><div class="grid3">${r.guias.map(cardGuia).join('')}</div>` : '') +
+      (r.documentos.length ? `<div class="sec-head"><h2>Documentos</h2></div>${tablaDocs(r.documentos)}` : '') +
+      (total ? '' : vacio('No encontramos coincidencias. Prueba con otro término.'));
+  },
+
+  async maquinas() {
+    const lista = await call('maquinas');
+    const nueva = can('editor') ? `<button class="btn btn-primary" data-act="nuevaMaquina">${ic('plus', 18)} Nueva máquina</button>` : '';
+    const html = head('Biblioteca técnica', 'Máquinas', 'Explora los equipos, comprende sus principios y encuentra su documentación.', nueva) + demoBanner() + `
+      <div class="toolbar">
+        <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar por código, nombre o descripción"></div>
+        <select id="fArea"><option value="">Todas las áreas</option>${uniq(lista.map(m => m.area)).map(a => `<option>${esc(a)}</option>`).join('')}</select>
+        <select id="fClase"><option value="">Todas las clases</option><option value="A">Clase A</option><option value="B">Clase B</option><option value="C">Clase C</option></select>
+        ${selectorVista('maq')}
+      </div>
+      <div id="grid"></div>`;
+    return {
+      html,
+      after() {
+        const filtrar = () => {
+          const q = norm($('#fQ').value), a = $('#fArea').value, c = $('#fClase').value;
+          const r = lista.filter(m => (!a || m.area === a) && (!c || m.clase === c) && (!q || norm(m.id + ' ' + m.nombre + ' ' + m.descripcion).includes(q)));
+          $('#grid').innerHTML = !r.length ? `<div class="grid3">${vacio('No hay máquinas que coincidan con el filtro.')}</div>`
+            : vistaDe('maq') === 'lista' ? tablaMaquinas(r) : `<div class="grid3">${r.map(cardMaquina).join('')}</div>`;
+        };
+        ['#fQ', '#fArea', '#fClase'].forEach(s => $(s).addEventListener('input', filtrar));
+        enlazarVista('maq', filtrar);
+        filtrar();
+      }
+    };
+  },
+
+  async maquina({ id }) {
+    const d = await call('maquina', { id }), m = d.maquina;
+    const acts = [
+      can('editor') && `<button class="btn" data-act="editarMaquina" data-id="${esc(m.id)}">${ic('edit', 17)} Editar</button>`,
+      can('admin') && `<button class="btn btn-danger" data-act="eliminarMaquina" data-id="${esc(m.id)}">${ic('trash', 17)} Eliminar</button>`
+    ].filter(Boolean).join('');
+    return `
+      <a class="back" data-go="maquinas">${ic('back', 18)} Volver al catálogo</a>
+      <div class="card ficha">
+        <div class="ficha-head">
+          <div style="flex:1;min-width:260px">
+            <div class="item-top" style="justify-content:flex-start;gap:12px"><span class="code">${esc(m.id)}</span>${badgeClase(m.clase)}</div>
+            <h1>${esc(m.nombre)}</h1>
+            <p class="lead">${esc(m.descripcion)}</p>
+          </div>
+          <div class="acts">${acts}</div>
+        </div>
+        <dl class="specs">${[['Área', m.area], ['Ubicación', m.ubicacion], ['Fabricante', m.fabricante], ['Estado', m.estado], ['Actualizado', m.actualizado]]
+          .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || '—')}</dd></div>`).join('')}</dl>
+      </div>
+
+      <div class="sec-head"><h2>Guías de funcionamiento</h2>${can('editor') ? `<button class="btn btn-sm" data-act="nuevaGuia" data-id="${esc(m.id)}">${ic('plus', 16)} Nueva guía</button>` : ''}</div>
+      <div class="grid3">${d.guias.map(cardGuia).join('') || vacio('Esta máquina aún no tiene guías publicadas.')}</div>
+
+      <div class="sec-head"><h2>Documentación</h2>${can('editor') ? `<button class="btn btn-sm" data-act="nuevoDocumento" data-id="${esc(m.id)}">${ic('plus', 16)} Nuevo documento</button>` : ''}</div>
+      ${tablaDocs(d.documentos, false)}`;
+  },
+
+  async guias() {
+    const lista = await call('guias');
+    const nueva = can('editor') ? `<button class="btn btn-primary" data-act="nuevaGuia">${ic('plus', 18)} Nueva guía</button>` : '';
+    const html = head('Biblioteca técnica', 'Guías de Funcionamiento', 'Procedimientos y principios de funcionamiento de cada máquina.', nueva) + `
+      <div class="toolbar">
+        <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar guía o máquina"></div>
+        <select id="fArea"><option value="">Todas las áreas</option>${uniq(lista.map(g => g.area)).map(a => `<option>${esc(a)}</option>`).join('')}</select>
+        ${can('editor') ? `<select id="fEst"><option value="">Todos los estados</option>${ESTADOS_GUIA.map(e => `<option>${e}</option>`).join('')}</select>` : ''}
+        ${selectorVista('gui')}
+      </div>
+      <div id="grid"></div>`;
+    return {
+      html,
+      after() {
+        const filtrar = () => {
+          const q = norm($('#fQ').value), a = $('#fArea').value, e = $('#fEst') ? $('#fEst').value : '';
+          const r = lista.filter(g => (!a || g.area === a) && (!e || g.estado === e) && (!q || norm(g.id + ' ' + g.titulo + ' ' + g.maquinaId + ' ' + g.maquinaNombre).includes(q)));
+          $('#grid').innerHTML = !r.length ? `<div class="grid3">${vacio('No hay guías que coincidan con el filtro.')}</div>`
+            : vistaDe('gui') === 'lista' ? tablaGuias(r) : `<div class="grid3">${r.map(cardGuia).join('')}</div>`;
+        };
+        ['#fQ', '#fArea', '#fEst'].forEach(s => $(s) && $(s).addEventListener('input', filtrar));
+        enlazarVista('gui', filtrar);
+        filtrar();
+      }
+    };
+  },
+
+  async guia({ id }) {
+    const g = await call('guia', { id });
+    const acts = [
+      can('editor') && `<button class="btn" data-act="editarGuia" data-id="${esc(g.id)}">${ic('edit', 17)} Editar</button>`,
+      can('admin') && `<button class="btn btn-danger" data-act="eliminarGuia" data-id="${esc(g.id)}">${ic('trash', 17)} Eliminar</button>`
+    ].filter(Boolean).join('');
+    return `
+      <a class="back" data-go="guias">${ic('back', 18)} Volver a las guías</a>
+      <article class="card doc-view">
+        <div class="item-top"><span class="code">${esc(g.id)}</span><div class="acts">${badgeEstado(g.estado)}</div></div>
+        <h1>${esc(g.titulo)}</h1>
+        <div class="meta">${esc(g.area)} · <a class="lnk" data-go="maquina" data-id="${esc(g.maquinaId)}">${esc(g.maquinaId)} · ${esc(g.maquinaNombre)}</a><br>
+          Versión ${esc(g.version)} · Actualizada ${esc(g.actualizado)}${g.autor ? ' · ' + esc(g.autor) : ''}</div>
+        ${g.resumen ? `<p class="lead">${esc(g.resumen)}</p>` : ''}
+        <div class="prose">${md(g.contenido)}</div>
+        ${acts ? `<div class="acts" style="margin-top:28px">${acts}</div>` : ''}
+      </article>`;
+  },
+
+  async documentos() {
+    const lista = await call('documentos');
+    const nuevo = can('editor') ? `<button class="btn btn-primary" data-act="nuevoDocumento">${ic('plus', 18)} Nuevo documento</button>` : '';
+    const html = head('Biblioteca técnica', 'Documentación', 'Manuales, fichas técnicas y documentos de operación por máquina.', nuevo) + `
+      <div class="toolbar">
+        <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar documento o máquina"></div>
+        <select id="fTipo"><option value="">Todos los tipos</option>${uniq(lista.map(d => d.tipo)).map(t => `<option>${esc(t)}</option>`).join('')}</select>
+      </div>
+      <div id="tabla"></div>`;
+    return {
+      html,
+      after() {
+        const filtrar = () => {
+          const q = norm($('#fQ').value), t = $('#fTipo').value;
+          const r = lista.filter(d => (!t || d.tipo === t) && (!q || norm(d.id + ' ' + d.titulo + ' ' + d.maquinaId + ' ' + d.maquinaNombre).includes(q)));
+          $('#tabla').innerHTML = tablaDocs(r);
+        };
+        ['#fQ', '#fTipo'].forEach(s => $(s).addEventListener('input', filtrar));
+        filtrar();
+      }
+    };
+  },
+
+  async perfil() {
+    const u = await call('perfil');
+    const permisos = {
+      lector: ['Consultar máquinas, guías publicadas y documentos', 'Agendar reuniones y gestionar tus tareas', 'Cambiar tu contraseña'],
+      editor: ['Todo lo del lector', 'Crear y editar máquinas, guías y documentos', 'Ver guías en borrador y en revisión'],
+      admin: ['Todo lo del editor', 'Eliminar registros', 'Crear usuarios, asignar roles y restablecer contraseñas']
+    }[u.rol] || [];
+    return {
+      html: head('Mi cuenta', 'Mi Perfil', 'Tus datos, área y preferencias de cuenta.') + `
+        <div class="grid2">
+          <div class="card pad">
+            <div class="profile">
+              <div class="avatar xl">${esc(iniciales(u.nombre))}</div>
+              <div><h2>${esc(u.nombre)}</h2><p class="muted" style="margin:6px 0 0">${esc(u.email)}</p></div>
+            </div>
+            <dl class="specs two">
+              <div><dt>Área</dt><dd>${esc(u.area || '—')}</dd></div>
+              <div><dt>Rol</dt><dd>${badgeRol(u.rol)}</dd></div>
+              <div><dt>Último acceso</dt><dd>${esc(u.ultimoAcceso || '—')}</dd></div>
+              <div><dt>Cuenta creada</dt><dd>${esc(u.creado || '—')}</dd></div>
+            </dl>
+            <div class="perm"><b>Con tu rol puedes:</b><ul>${permisos.map(p => `<li>${p}</li>`).join('')}</ul></div>
+          </div>
+          <div style="display:grid;gap:24px">
+          <div class="card pad">
+            <h2>${ic('lock')} Cambiar contraseña</h2>
+            <p class="muted">Usa al menos 8 caracteres, con letras y números.</p>
+            <form id="fPass" class="form" style="gap:16px">
+              <label class="fld"><span>Contraseña actual</span><input name="actual" type="password" required autocomplete="current-password"></label>
+              <label class="fld"><span>Nueva contraseña</span><input name="nueva" type="password" required minlength="8" autocomplete="new-password"></label>
+              <label class="fld"><span>Repite la nueva contraseña</span><input name="repite" type="password" required minlength="8" autocomplete="new-password"></label>
+              <div class="form-err" id="pErr"></div>
+              <div><button class="btn btn-primary" type="submit">Actualizar contraseña</button></div>
+            </form>
+          </div>
+          <div class="card pad">
+            <h2>Notificaciones</h2>
+            <div class="pref" style="margin-top:14px"><div><b>Recordatorios de reuniones</b><span>Aviso en la intranet antes de cada reunión en la que participas.</span></div>
+              <select id="prefRec" aria-label="Minutos de anticipación">
+                ${[[0, 'Desactivado'], [5, '5 minutos antes'], [10, '10 minutos antes'], [15, '15 minutos antes'], [30, '30 minutos antes']]
+                  .map(([v, t]) => `<option value="${v}" ${Number(u.prefs.recordatorio) === v ? 'selected' : ''}>${t}</option>`).join('')}
+              </select></div>
+            <div class="pref"><div><b>Tareas asignadas</b><span>Recibir un correo cuando alguien te asigne una tarea.</span></div>
+              <button type="button" class="switch" role="switch" id="prefTar" aria-checked="${!!u.prefs.avisoTareas}" aria-label="Recibir correo por tareas asignadas"></button></div>
+          </div>
+          </div>
+        </div>`,
+      after() {
+        const guardarPrefs = async () => {
+          const datos = { recordatorio: Number($('#prefRec').value), avisoTareas: $('#prefTar').getAttribute('aria-checked') === 'true' };
+          try { await call('guardarPrefs', datos); toast('Preferencias guardadas'); programarRecordatorios(); }
+          catch (x) { toast(x.message, true); }
+        };
+        $('#prefRec').addEventListener('change', guardarPrefs);
+        $('#prefTar').addEventListener('click', e => {
+          const b = e.currentTarget; b.setAttribute('aria-checked', String(b.getAttribute('aria-checked') !== 'true')); guardarPrefs();
+        });
+        $('#fPass').addEventListener('submit', async e => {
+          e.preventDefault();
+          const f = e.target, b = $('button', f), err = $('#pErr');
+          err.textContent = '';
+          if (f.nueva.value !== f.repite.value) { err.textContent = 'Las contraseñas nuevas no coinciden.'; return; }
+          b.disabled = true;
+          try {
+            await call('cambiarPassword', { actual: f.actual.value, nueva: f.nueva.value });
+            f.reset(); toast('Contraseña actualizada');
+          } catch (x) { err.textContent = x.message; }
+          finally { b.disabled = false; }
+        });
+      }
+    };
+  },
+
+  async usuarios() {
+    const [lista, reg] = await Promise.all([call('usuarios'), call('registro')]);
+    S.cache.usuarios = lista;
+    return head('Administración', 'Usuarios y accesos', 'Crea cuentas, asigna roles y controla quién puede ingresar.',
+      `<button class="btn btn-primary" data-act="nuevoUsuario">${ic('plus', 18)} Nuevo usuario</button>`) + `
+      <div class="card table-wrap"><table class="tbl">
+        <thead><tr><th>Usuario</th><th>Área</th><th>Rol</th><th>Estado</th><th>Último acceso</th><th></th></tr></thead>
+        <tbody>${lista.map(u => `<tr>
+          <td><b>${esc(u.nombre)}</b>${u.id === S.user.id ? ' <span class="muted sm">(tú)</span>' : ''}<br><span class="muted sm">${esc(u.email)}</span></td>
+          <td>${esc(u.area || '—')}</td>
+          <td>${badgeRol(u.rol)}</td>
+          <td><span class="dot ${u.activo === 'SI' ? 'on' : 'off'}"></span>${u.activo === 'SI' ? 'Activo' : 'Desactivado'}</td>
+          <td class="muted">${esc(u.ultimoAcceso || 'Nunca')}</td>
+          <td class="row-acts">${btnIcon('editarUsuario', u.id, 'edit', 'Editar')}${btnIcon('resetPassword', u.id, 'key', 'Restablecer contraseña')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+
+      <div class="sec-head"><h2>Actividad reciente</h2></div>
+      ${reg.length ? `<div class="card table-wrap"><table class="tbl">
+        <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>
+        <tbody>${reg.map(r => `<tr><td class="muted">${esc(r.fecha)}</td><td>${esc(r.email)}</td><td>${esc(r.accion)}</td><td class="muted">${esc(r.detalle)}</td></tr>`).join('')}</tbody>
+      </table></div>` : vacio('Sin actividad registrada.')}`;
+  }
+};
+
+/* ---------- Modales y formularios ---------- */
+function abrirModal(html) {
+  const m = $('#modal');
+  m.innerHTML = `<div class="m-box" role="dialog" aria-modal="true">${html}</div>`;
+  m.classList.remove('hidden');
+  setTimeout(() => { const f = m.querySelector('input:not([readonly]),select,textarea'); if (f) f.focus(); }, 60);
+}
+
+function cerrarModal() {
+  const m = $('#modal');
+  m.classList.add('hidden');
+  m.innerHTML = '';
+}
+
+function formModal({ titulo, sub = '', campos, valores = {}, boton = 'Guardar', onSubmit }) {
+  const fields = campos.map(c => {
+    const v = valores[c.k] ?? c.def ?? '';
+    const req = c.req ? 'required' : '';
+    let inp;
+    if (c.type === 'select') {
+      inp = `<select name="${c.k}" ${req}>${c.ph ? `<option value="">${esc(c.ph)}</option>` : ''}${c.opts.map(o => {
+        const [val, lab] = Array.isArray(o) ? o : [o, o];
+        return `<option value="${esc(val)}" ${String(val) === String(v) ? 'selected' : ''}>${esc(lab)}</option>`;
+      }).join('')}</select>`;
+    } else if (c.type === 'checkbox') {
+      return `<label class="chk ${c.full ? 'fld full' : ''}" style="flex-direction:row"><input type="checkbox" name="${c.k}" ${v ? 'checked' : ''}> ${esc(c.label)}</label>`;
+    } else if (c.type === 'textarea') {
+      inp = `<textarea name="${c.k}" rows="${c.rows || 4}" ${req} ${c.max ? `maxlength="${c.max}"` : ''} ${c.ph ? `placeholder="${esc(c.ph)}"` : ''}>${esc(v)}</textarea>`;
+    } else {
+      inp = `<input name="${c.k}" type="${c.type || 'text'}" value="${esc(v)}" ${req} ${c.ro ? 'readonly' : ''} ${c.min ? `minlength="${c.min}"` : ''} ${c.ph ? `placeholder="${esc(c.ph)}"` : ''} ${c.type === 'password' ? 'autocomplete="new-password"' : ''}>`;
+    }
+    return `<label class="fld ${c.full ? 'full' : ''}"><span>${esc(c.label)}${c.req ? ' *' : ''}</span>${inp}${c.hint ? `<small>${esc(c.hint)}</small>` : ''}</label>`;
+  }).join('');
+
+  abrirModal(`<form class="form" id="mForm" novalidate>
+    <div class="m-head"><div><h2>${esc(titulo)}</h2>${sub ? `<p class="muted">${esc(sub)}</p>` : ''}</div><button type="button" class="icon-btn" data-close title="Cerrar">${ic('x')}</button></div>
+    <div class="form-grid">${fields}</div>
+    <div class="form-err" id="mErr"></div>
+    <div class="m-foot"><button type="button" class="btn" data-close>Cancelar</button><button class="btn btn-primary" type="submit">${esc(boton)}</button></div>
+  </form>`);
+
+  $('#mForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = e.target, b = $('button[type=submit]', f);
+    if (!f.checkValidity()) { $('#mErr').textContent = 'Completa los campos obligatorios (*).'; f.reportValidity(); return; }
+    const datos = Object.fromEntries(new FormData(f));
+    b.disabled = true; $('#mErr').textContent = '';
+    try { await onSubmit(datos); cerrarModal(); }
+    catch (x) { $('#mErr').textContent = x.message; }
+    finally { b.disabled = false; }
+  });
+}
+
+function confirmar(titulo, msg, boton = 'Eliminar') {
+  return new Promise(res => {
+    abrirModal(`<div class="m-head"><h2>${esc(titulo)}</h2></div><p class="muted" style="line-height:1.6">${esc(msg)}</p>
+      <div class="m-foot"><button class="btn" id="cNo">Cancelar</button><button class="btn btn-danger" id="cSi">${esc(boton)}</button></div>`);
+    $('#cNo').onclick = () => { cerrarModal(); res(false); };
+    $('#cSi').onclick = () => { cerrarModal(); res(true); };
+  });
+}
+
+function toast(msg, err = false) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => { t.className = 'toast'; }, 3400);
+}
+
+async function opcionesMaquinas() {
+  const lista = await call('maquinas');
+  return lista.map(m => [m.id, m.id + ' · ' + m.nombre]);
+}
+
+const camposMaquina = editando => [
+  { k: 'id', label: 'Código', req: true, ro: editando, ph: 'DEM-107', hint: editando ? 'El código no se puede modificar.' : 'Mayúsculas, números y guiones.' },
+  { k: 'nombre', label: 'Nombre', req: true },
+  { k: 'area', label: 'Área', type: 'select', opts: AREAS, req: true },
+  { k: 'clase', label: 'Clase', type: 'select', opts: [['A', 'Clase A · crítica'], ['B', 'Clase B · importante'], ['C', 'Clase C · apoyo']], req: true },
+  { k: 'estado', label: 'Estado', type: 'select', opts: ESTADOS_MAQ },
+  { k: 'ubicacion', label: 'Ubicación' },
+  { k: 'fabricante', label: 'Fabricante', full: true },
+  { k: 'descripcion', label: 'Descripción', type: 'textarea', full: true, req: true, max: 600 }
+];
+
+async function formGuia(valores = {}) {
+  const maqs = await opcionesMaquinas();
+  formModal({
+    titulo: valores.id ? 'Editar guía ' + valores.id : 'Nueva guía de funcionamiento',
+    valores,
+    campos: [
+      { k: 'titulo', label: 'Título', req: true, full: true, ph: 'Principios de funcionamiento · …' },
+      { k: 'maquinaId', label: 'Máquina', type: 'select', opts: maqs, req: true, ph: 'Selecciona una máquina' },
+      { k: 'version', label: 'Versión', req: true, def: '0.1' },
+      { k: 'estado', label: 'Estado', type: 'select', opts: ESTADOS_GUIA, req: true },
+      { k: 'resumen', label: 'Resumen', type: 'textarea', rows: 2, max: 300, full: true },
+      { k: 'contenido', label: 'Contenido', type: 'textarea', rows: 12, req: true, full: true,
+        hint: 'Formato: "## Título de sección", "- viñeta" y **negrita**.' }
+    ],
+    onSubmit: async d => {
+      const r = await call('guardarGuia', { ...d, id: valores.id || '' });
+      toast(valores.id ? 'Guía actualizada' : 'Guía creada');
+      go('guia', { id: r.id });
+    }
+  });
+}
+
+async function formDocumento(valores = {}) {
+  const maqs = await opcionesMaquinas();
+  formModal({
+    titulo: valores.id ? 'Editar documento ' + valores.id : 'Nuevo documento',
+    valores,
+    campos: [
+      { k: 'titulo', label: 'Título', req: true, full: true },
+      { k: 'maquinaId', label: 'Máquina', type: 'select', opts: maqs, req: true, ph: 'Selecciona una máquina' },
+      { k: 'tipo', label: 'Tipo', type: 'select', opts: TIPOS_DOC, req: true },
+      { k: 'version', label: 'Versión', def: '1.0' },
+      { k: 'url', label: 'Enlace al archivo', type: 'url', ph: 'https://drive.google.com/…', hint: 'Opcional. Enlace de Drive u otro sitio (https).' }
+    ],
+    onSubmit: async d => {
+      await call('guardarDocumento', { ...d, id: valores.id || '' });
+      toast(valores.id ? 'Documento actualizado' : 'Documento creado');
+      refrescar();
+    }
+  });
+}
+
+/* ---------- Reuniones ---------- */
+function inicioGrilla(y, m) { const p = new Date(y, m, 1); return new Date(y, m, 1 - (p.getDay() + 6) % 7); }
+const eventosMes = () => S.mesCache[S.cal.y + '-' + S.cal.m] || [];
+
+async function cargarMes(forzar) {
+  const { y, m } = S.cal, k = y + '-' + m;
+  pintarCal();
+  if (S.mesCache[k] && !forzar) return pintarDia();
+  $('#calGrid').classList.add('cargando');
+  $('#diaLista').innerHTML = '<div class="vacio-s">Cargando agenda…</div>';
+  try {
+    const desde = inicioGrilla(y, m), hasta = new Date(desde.getFullYear(), desde.getMonth(), desde.getDate() + 42);
+    S.mesCache[k] = await call('reuniones', { desde: desde.toISOString(), hasta: hasta.toISOString() });
+    if (S.view === 'reuniones' && S.cal.y === y && S.cal.m === m) { pintarCal(); pintarDia(); }
+  } catch (e) {
+    if ($('#diaLista')) $('#diaLista').innerHTML = `<div class="vacio-s">${esc(e.message)}</div>`;
+  } finally {
+    if ($('#calGrid')) $('#calGrid').classList.remove('cargando');
+  }
+}
+
+function pintarCal() {
+  if (!$('#calGrid')) return;
+  const { y, m, sel } = S.cal;
+  $('#mesLabel').textContent = cap(MESES[m]) + ' ' + y;
+  const porDia = {};
+  eventosMes().forEach(r => { const k = claveDia(new Date(r.inicio)); porDia[k] = (porDia[k] || 0) + 1; });
+  const ini = inicioGrilla(y, m), hoy = hoyClave();
+  let html = '';
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + i), k = claveDia(d), n = porDia[k] || 0;
+    const txt = n ? plural(n, 'reunión', 'reuniones') : '';
+    html += `<button type="button" class="cal-dia ${d.getMonth() !== m ? 'fuera' : ''} ${k === hoy ? 'hoy' : ''}" data-dia="${k}" aria-pressed="${k === sel}"
+      aria-label="${DIAS[d.getDay()]} ${d.getDate()} de ${MESES[d.getMonth()]}${n ? ', ' + txt : ''}"><span class="num">${d.getDate()}</span>${n ? `<span class="cal-tag">${txt}</span>` : ''}</button>`;
+  }
+  $('#calGrid').innerHTML = html;
+}
+
+function pintarDia() {
+  if (!$('#diaLista')) return;
+  const d = deClave(S.cal.sel), ahora = new Date();
+  $('#diaLabel').textContent = cap(DIAS[d.getDay()]) + ' ' + d.getDate() + ' de ' + MESES[d.getMonth()];
+  $('#btnReunionDia').dataset.id = S.cal.sel;
+  const lista = eventosMes().filter(r => claveDia(new Date(r.inicio)) === S.cal.sel).sort((a, b) => new Date(a.inicio) - new Date(b.inicio));
+  if (!lista.length) { $('#diaLista').innerHTML = '<div class="vacio-s">No hay reuniones agendadas para este día.</div>'; return; }
+  $('#diaLista').innerHTML = lista.map(r => {
+    const pasada = new Date(r.fin) < ahora;
+    const estado = pasada ? ['Finalizada', 'b-green'] : S.cal.sel === hoyClave() ? ['Hoy', 'b-blue'] : r.organizo ? ['Organizas', 'b-blue'] : r.soyInvitado ? ['Invitado', 'b-gray'] : ['Equipo', 'b-gray'];
+    const lugar = [r.lugar || (r.meet ? 'Google Meet' : ''), plural(r.participantes, 'participante', 'participantes')].filter(Boolean).join(' · ');
+    const acts = [
+      r.meet && !pasada && (r.soyInvitado || r.organizo) && `<a class="btn btn-sm btn-primary" href="${esc(r.meet)}" target="_blank" rel="noopener">Unirse</a>`,
+      !pasada && (r.organizo || can('admin')) && `<button class="btn btn-sm btn-danger" data-act="cancelarReunion" data-id="${esc(r.id)}">Cancelar</button>`
+    ].filter(Boolean).join('');
+    return `<article class="reunion">
+      <div class="reunion-cab"><b>${esc(r.titulo)}</b><span class="badge ${estado[1]}">${estado[0]}</span></div>
+      <div class="reunion-meta"><span>${ic('clock', 16)}${rango(r)}</span>${lugar ? `<span>${ic('pin', 16)}${esc(lugar)}</span>` : ''}</div>
+      ${acts ? `<div class="reunion-acts">${acts}</div>` : ''}</article>`;
+  }).join('');
+}
+
+/* ---------- Tareas ---------- */
+function pintarTablero() {
+  if (!$('#tablero')) return;
+  $('#tFiltro').querySelectorAll('[data-f]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.f === S.filtroTareas)));
+  const yo = S.user.email, q = norm(S.qTareas), hoy = hoyClave(), orden = { Alta: 0, Media: 1, Baja: 2 };
+  const lista = (S.cache.tareas || []).filter(t =>
+    (S.filtroTareas === 'todas' || (S.filtroTareas === 'mias' ? t.asignadoA === yo : t.creadoPor === yo && t.asignadoA !== yo)) &&
+    (!q || norm(t.titulo + ' ' + t.descripcion + ' ' + t.asignadoNombre).includes(q)));
+  $('#tablero').innerHTML = ESTADOS_TAREA.map((estado, ci) => {
+    const items = lista.filter(t => t.estado === estado).sort((a, b) => (orden[a.prioridad] - orden[b.prioridad]) || (a.vence || '9').localeCompare(b.vence || '9'));
+    const cards = items.map(t => {
+      const vencida = t.vence && t.vence < hoy && estado !== 'Completada';
+      const ant = ESTADOS_TAREA[ci - 1], sig = ESTADOS_TAREA[ci + 1];
+      const quien = t.asignadoA === yo ? (t.creadoPor !== yo ? 'De ' + t.creadorNombre : 'Tú') : 'Para ' + t.asignadoNombre;
+      return `<article class="tarea ${estado === 'Completada' ? 'hecha' : ''}">
+        <div class="tarea-cab"><b>${esc(t.titulo)}</b><span class="badge ${t.prioridad === 'Alta' ? 'b-pink' : t.prioridad === 'Media' ? 'b-amber' : 'b-gray'}">${esc(t.prioridad)}</span></div>
+        ${t.descripcion ? `<p>${esc(t.descripcion)}</p>` : ''}
+        <div class="tarea-meta"><span>${ic('user', 16)}${esc(quien)}</span><span class="${vencida ? 'vencida' : ''}">${ic('cal', 16)}${t.vence ? (vencida ? 'Venció ' : 'Vence ') + ddmm(t.vence) : 'Sin fecha'}</span></div>
+        <div class="tarea-acts">
+          ${t.creadoPor === yo || can('admin') ? btnIcon('eliminarTarea', t.id, 'trash', 'Eliminar tarea') : ''}
+          ${ant ? `<button class="btn btn-sm" data-act="moverTarea" data-id="${esc(t.id)}|${ant}" title="Volver a ${ant}" aria-label="Volver a ${ant}">${ic('back', 16)}</button>` : ''}
+          ${sig ? `<button class="btn btn-sm btn-primary" data-act="moverTarea" data-id="${esc(t.id)}|${sig}">${COLUMNAS[estado][1]} ${ic('next', 16)}</button>` : ''}
+        </div></article>`;
+    }).join('');
+    return `<section class="columna" aria-label="${estado}">
+      <div class="columna-cab"><h2><span class="punto" style="background:${COLUMNAS[estado][0]}"></span>${estado}</h2><span class="conteo">${items.length}</span></div>
+      ${cards || `<div class="columna-vacia">${q ? 'Ninguna coincide con tu búsqueda.' : 'Sin tareas aquí.'}</div>`}</section>`;
+  }).join('');
+}
+
+/* ---------- Recordatorios de reuniones ---------- */
+async function programarRecordatorios() {
+  (S.recTimers || []).forEach(clearTimeout); S.recTimers = [];
+  if (!S.user) return;
+  try {
+    const r = await call('recordatorios');
+    if (!r.minutos) return;
+    const ahora = Date.now();
+    r.eventos.forEach(ev => {
+      const espera = new Date(ev.inicio).getTime() - r.minutos * 60000 - ahora;
+      if (espera > -r.minutos * 60000 && espera < 86400000) {
+        S.recTimers.push(setTimeout(() => {
+          if (S.avisados.has(ev.id) || !S.user) return;
+          S.avisados.add(ev.id);
+          const faltan = Math.max(0, Math.round((new Date(ev.inicio) - Date.now()) / 60000));
+          toast('«' + ev.titulo + '» empieza ' + (faltan ? 'en ' + faltan + ' min' : 'ahora') + '.');
+        }, Math.max(espera, 0)));
+      }
+    });
+  } catch (e) { /* los recordatorios no deben interrumpir el uso */ }
+}
+
+/* ---------- Acciones (botones con data-act) ---------- */
+const ACT = {
+  acerca() {
+    abrirModal(`<div class="acerca-cab"><img src="${esc(CFG.logo)}" alt=""></div>
+      <div class="m-head"><div><h2>${esc(CFG.nombre)}</h2><p class="muted">Versión ${esc(ACERCA.version)}</p></div><button type="button" class="icon-btn" data-close title="Cerrar">${ic('x')}</button></div>
+      <div class="eyebrow">Creado por</div>
+      <ul class="creditos">${ACERCA.creditos.map(c => `<li><span class="avatar">${esc(iniciales(c.nombre))}</span><div><b>${esc(c.nombre)}</b>${c.rol ? `<span>${esc(c.rol)}</span>` : ''}</div></li>`).join('')}</ul>
+      ${ACERCA.soporte ? `<div class="eyebrow" style="margin-top:22px">Soporte</div><p class="muted" style="margin:0">¿Dudas o encontraste un error? Escríbenos a <a class="lnk" href="mailto:${esc(ACERCA.soporte)}">${esc(ACERCA.soporte)}</a></p>` : ''}
+      <div class="m-foot"><button class="btn btn-primary" data-close>Cerrar</button></div>`);
+  },
+  nuevaReunion(fecha) {
+    formModal({
+      titulo: 'Agendar reunión', sub: 'Se crea en el calendario del equipo y envía la invitación a cada participante.', boton: 'Agendar reunión',
+      valores: { fecha: fecha || (S.cal && S.cal.sel) || hoyClave(), horaInicio: '10:00', horaFin: '10:30' },
+      campos: [
+        { k: 'titulo', label: 'Nombre de la reunión', req: true, full: true },
+        { k: 'fecha', label: 'Fecha', type: 'date', req: true, full: true },
+        { k: 'horaInicio', label: 'Inicio', type: 'time', req: true },
+        { k: 'horaFin', label: 'Término', type: 'time', req: true },
+        { k: 'invitados', label: 'Participantes', full: true, ph: 'correo1@empresa.cl, correo2@empresa.cl', hint: 'Tú quedas incluido automáticamente.' },
+        { k: 'lugar', label: 'Sala o enlace', full: true },
+        { k: 'descripcion', label: 'Agenda', type: 'textarea', rows: 3, full: true, max: 2000 }
+      ],
+      onSubmit: async d => {
+        await call('crearReunion', d);
+        toast('Reunión agendada. Se enviaron las invitaciones.');
+        const f = deClave(d.fecha);
+        S.mesCache = {}; S.cal = { y: f.getFullYear(), m: f.getMonth(), sel: d.fecha };
+        if (S.view === 'reuniones') cargarMes(true); else go('reuniones');
+        programarRecordatorios();
+      }
+    });
+  },
+  async cancelarReunion(id) {
+    if (!await confirmar('Cancelar reunión', 'Se eliminará la reunión del calendario del equipo y se avisará a los participantes.', 'Cancelar reunión')) return;
+    await call('cancelarReunion', { id }); toast('Reunión cancelada'); S.mesCache = {}; cargarMes(true);
+  },
+  async nuevaTarea() {
+    const personas = await call('personas');
+    const prefs = (await call('perfil')).prefs || {};
+    formModal({
+      titulo: 'Nueva tarea', boton: 'Crear tarea',
+      valores: { asignadoA: S.user.email, prioridad: 'Media', notificar: prefs.avisoTareas !== false },
+      campos: [
+        { k: 'titulo', label: 'Tarea', req: true, full: true },
+        { k: 'descripcion', label: 'Detalle', type: 'textarea', rows: 3, full: true, max: 1000 },
+        { k: 'asignadoA', label: 'Responsable', type: 'select', req: true, opts: personas.map(p => [p.email, p.nombre + (p.email === S.user.email ? ' (tú)' : '')]) },
+        { k: 'prioridad', label: 'Prioridad', type: 'select', opts: ['Alta', 'Media', 'Baja'], req: true },
+        { k: 'vence', label: 'Vence', type: 'date' },
+        { k: 'notificar', label: 'Avisar por correo al responsable', type: 'checkbox', full: true }
+      ],
+      onSubmit: async d => {
+        await call('guardarTarea', { ...d, notificar: d.notificar === 'on' });
+        toast('Tarea creada'); go('tareas');
+      }
+    });
+  },
+  async moverTarea(dato) {
+    const [id, estado] = dato.split('|');
+    await call('moverTarea', { id, estado });
+    toast(estado === 'Completada' ? 'Tarea completada' : 'Tarea movida a «' + estado + '»');
+    S.cache.tareas = await call('tareas'); pintarTablero();
+  },
+  async eliminarTarea(id) {
+    if (!await confirmar('Eliminar tarea', 'Se eliminará la tarea ' + id + '. Esta acción no se puede deshacer.')) return;
+    await call('eliminarTarea', { id }); toast('Tarea eliminada');
+    S.cache.tareas = await call('tareas'); pintarTablero();
+  },
+  nuevaMaquina() {
+    formModal({
+      titulo: 'Nueva máquina', campos: camposMaquina(false), valores: { estado: 'Operativa' },
+      onSubmit: async d => {
+        const r = await call('guardarMaquina', { ...d, nuevo: true });
+        toast('Máquina creada'); go('maquina', { id: r.id });
+      }
+    });
+  },
+  async editarMaquina(id) {
+    const { maquina } = await call('maquina', { id });
+    formModal({
+      titulo: 'Editar máquina', campos: camposMaquina(true), valores: maquina,
+      onSubmit: async d => { await call('guardarMaquina', d); toast('Cambios guardados'); go('maquina', { id }); }
+    });
+  },
+  async eliminarMaquina(id) {
+    if (!await confirmar('Eliminar máquina', `Se eliminará ${id} del catálogo. Esta acción no se puede deshacer.`)) return;
+    await call('eliminarMaquina', { id }); toast('Máquina eliminada'); go('maquinas');
+  },
+  nuevaGuia(maquinaId) { return formGuia({ maquinaId: maquinaId || '' }); },
+  async editarGuia(id) { return formGuia(await call('guia', { id })); },
+  async eliminarGuia(id) {
+    if (!await confirmar('Eliminar guía', `Se eliminará la guía ${id}. Esta acción no se puede deshacer.`)) return;
+    await call('eliminarGuia', { id }); toast('Guía eliminada'); go('guias');
+  },
+  nuevoDocumento(maquinaId) { return formDocumento({ maquinaId: maquinaId || '' }); },
+  async editarDocumento(id) { return formDocumento(await call('documento', { id })); },
+  async eliminarDocumento(id) {
+    if (!await confirmar('Eliminar documento', `Se eliminará el documento ${id}. Esta acción no se puede deshacer.`)) return;
+    await call('eliminarDocumento', { id }); toast('Documento eliminado'); refrescar();
+  },
+  nuevoUsuario() {
+    formModal({
+      titulo: 'Nuevo usuario',
+      sub: 'Entrega la contraseña temporal de forma segura; el usuario podrá cambiarla en Mi Perfil.',
+      valores: { rol: 'lector' },
+      campos: [
+        { k: 'email', label: 'Correo', type: 'email', req: true, full: true },
+        { k: 'nombre', label: 'Nombre completo', req: true },
+        { k: 'area', label: 'Área' },
+        { k: 'rol', label: 'Rol', type: 'select', opts: [['lector', 'Lector · solo consulta'], ['editor', 'Editor · crea y edita'], ['admin', 'Administrador · control total']], req: true },
+        { k: 'password', label: 'Contraseña temporal', type: 'password', req: true, min: 8, hint: 'Mínimo 8 caracteres, con letras y números.' }
+      ],
+      onSubmit: async d => { await call('guardarUsuario', d); toast('Usuario creado'); refrescar(); }
+    });
+  },
+  editarUsuario(id) {
+    const u = (S.cache.usuarios || []).find(x => x.id === id);
+    if (!u) return;
+    formModal({
+      titulo: 'Editar usuario', sub: 'Los cambios de rol o estado cierran las sesiones abiertas de ese usuario.', valores: u,
+      campos: [
+        { k: 'email', label: 'Correo', ro: true, full: true },
+        { k: 'nombre', label: 'Nombre completo', req: true },
+        { k: 'area', label: 'Área' },
+        { k: 'rol', label: 'Rol', type: 'select', opts: [['lector', 'Lector'], ['editor', 'Editor'], ['admin', 'Administrador']], req: true },
+        { k: 'activo', label: 'Estado', type: 'select', opts: [['SI', 'Activo'], ['NO', 'Desactivado']] }
+      ],
+      onSubmit: async d => { await call('guardarUsuario', { ...d, id }); toast('Usuario actualizado'); refrescar(); }
+    });
+  },
+  resetPassword(id) {
+    const u = (S.cache.usuarios || []).find(x => x.id === id) || {};
+    formModal({
+      titulo: 'Restablecer contraseña', sub: u.email, boton: 'Restablecer',
+      campos: [{ k: 'password', label: 'Nueva contraseña temporal', type: 'password', req: true, min: 8, full: true, hint: 'Mínimo 8 caracteres, con letras y números.' }],
+      onSubmit: async d => { await call('resetPassword', { id, password: d.password }); toast('Contraseña restablecida'); }
+    });
+  }
+};
+
+/* ---------- Eventos globales ---------- */
+document.addEventListener('click', e => {
+  const modal = $('#modal');
+  if (e.target === modal || e.target.closest('[data-close]')) { cerrarModal(); return; }
+  const g = e.target.closest('[data-go]');
+  if (g) { e.preventDefault(); go(g.dataset.go, g.dataset.id ? { id: g.dataset.id } : {}); return; }
+  const a = e.target.closest('[data-act]');
+  if (a && ACT[a.dataset.act]) {
+    e.preventDefault();
+    Promise.resolve().then(() => ACT[a.dataset.act](a.dataset.id)).catch(x => toast(x.message, true));
+  }
+});
+
+document.addEventListener('submit', e => {
+  if (!e.target.matches('[data-search]')) return;
+  e.preventDefault();
+  const q = e.target.q.value.trim();
+  if (q.length >= 2) go('buscar', { q });
+  else toast('Escribe al menos 2 caracteres para buscar.', true);
+});
+
+document.addEventListener('change', async e => {
+  const cb = e.target.closest('[data-completar]');
+  if (!cb) return;
+  cb.disabled = true;
+  try { await call('moverTarea', { id: cb.dataset.completar, estado: 'Completada' }); toast('Tarea completada'); refrescar(); }
+  catch (x) { cb.checked = false; cb.disabled = false; toast(x.message, true); }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { cerrarModal(); cerrarMenu(); }
+  if (e.key === 'Enter' && e.target.matches && e.target.matches('tr[data-go]')) e.target.click();
+});
+
+document.addEventListener('DOMContentLoaded', async () => {
+  $('#brand').innerHTML = marcaHTML();
+  $('#loginBrand').innerHTML = marcaHTML();
+  $('#sbToggle').innerHTML = ic('panel');
+  $('#btnLogout').innerHTML = ic('logout');
+  $('#menuBtn').innerHTML = ic('menu');
+  $('#icInfo').innerHTML = ic('info', 16);
+  $('#anio').textContent = new Date().getFullYear();
+
+  document.querySelectorAll('[data-ver]').forEach(b => {
+    b.innerHTML = ic('eye', 18);
+    b.addEventListener('click', () => {
+      const p = b.parentElement.querySelector('input');
+      const ver = p.type === 'password';
+      p.type = ver ? 'text' : 'password';
+      b.setAttribute('aria-label', ver ? 'Ocultar contraseña' : 'Mostrar contraseña');
+    });
+  });
+  $('#loginForm').addEventListener('submit', onLogin);
+  $('#registroForm').addEventListener('submit', onRegistro);
+  if (CFG.registro) {
+    $('#accesoTabs').classList.remove('hidden');
+    document.querySelector('[data-solo-registro]').classList.remove('hidden');
+  }
+  $('#tabLogin').addEventListener('click', () => mostrarTab('login'));
+  $('#tabRegistro').addEventListener('click', () => mostrarTab('registro'));
+  document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => mostrarTab(b.dataset.tab)));
+  $('#btnLogout').addEventListener('click', () => salir('Cerraste sesión correctamente.'));
+  $('#sbToggle').addEventListener('click', () => {
+    const c = $('#app').classList.toggle('collapsed');
+    store.set('pq_sb', c ? '1' : null);
+  });
+  $('#menuBtn').addEventListener('click', () => $('#app').classList.add('menu-open'));
+  $('#scrim').addEventListener('click', cerrarMenu);
+  if (store.get('pq_sb')) $('#app').classList.add('collapsed');
+
+  const t = store.get('pq_t');
+  if (t) {
+    try { const o = await run('validarSesion', t); entrar(t, o.usuario); return; }
+    catch (e) { store.set('pq_t', null); }
+  }
+  mostrarLogin();
+});
+</script>
