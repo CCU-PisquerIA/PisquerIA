@@ -75,7 +75,11 @@ function loadBackend() {
   seguro_,
   ssoPerfil_,
   validarDominio_,
-  formatearNombreEmail_
+  formatearNombreEmail_,
+  ARCHIVOS_PERMITIDOS,
+  validarArchivo_,
+  firmaValida_,
+  docPublico_
 });
 `;
 
