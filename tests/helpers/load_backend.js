@@ -88,7 +88,11 @@ function loadBackend(overrides = {}) {
   guardar_,
   borrar_,
   trozos_,
-  sembrar_
+  sembrar_,
+  asistente_,
+  respuestaGemini_,
+  historialChat_,
+  contextoAsistente_
 });
 `;
 

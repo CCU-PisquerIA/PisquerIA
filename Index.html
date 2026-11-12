@@ -107,6 +107,22 @@
         <button type="button" class="pie-acerca" data-act="acerca"><span id="icInfo"></span>Acerca de este sistema</button>
       </footer>
     </main>
+
+    <button type="button" class="chat-fab" id="chatFab" aria-label="Abrir asistente PisquerIA" aria-expanded="false" aria-controls="chatPanel"></button>
+    <section class="chat hidden" id="chatPanel" role="dialog" aria-labelledby="chatTitulo">
+      <header class="chat-head">
+        <span class="chat-ava" id="chatAvaHead"></span>
+        <div class="chat-tit"><b id="chatTitulo">PisquerIA</b><span>Asistente de la intranet · Gemini</span></div>
+        <button type="button" class="icon-btn" id="chatNuevo" title="Nueva conversación" aria-label="Nueva conversación"></button>
+        <button type="button" class="icon-btn" id="chatCerrar" title="Cerrar" aria-label="Cerrar asistente"></button>
+      </header>
+      <div class="chat-msgs" id="chatMsgs" aria-live="polite"></div>
+      <form class="chat-form" id="chatForm">
+        <textarea name="q" rows="1" maxlength="2000" placeholder="Escribe tu pregunta…" aria-label="Mensaje para el asistente"></textarea>
+        <button class="chat-send" type="submit" aria-label="Enviar"></button>
+      </form>
+      <p class="chat-pie">Responde Gemini (Google) con los datos de la intranet. Puede equivocarse: verifica en las guías oficiales.</p>
+    </section>
   </div>
 
   <div id="modal" class="modal hidden"></div>
