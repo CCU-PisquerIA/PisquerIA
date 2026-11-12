@@ -60,7 +60,7 @@ function doGet() {
     ssoUser: ssoUser,
     ssoToken: ssoToken,
     ssoError: ssoError
-  });
+  }).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   return t.evaluate()
     .setTitle(APP.NOMBRE)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
@@ -251,6 +251,8 @@ function ssoPerfil_(email) {
 }
 
 function validarDominio_(email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email || email.indexOf('@') < 0) throw new Error('Ingresa un correo electrónico válido.');
   const permitidos = (APP.DOMINIOS_REGISTRO || []).map(function (d) { return d.toLowerCase(); });
   if (APP.MODO_DEMO && permitidos.indexOf('demo.cl') < 0) {
     permitidos.push('demo.cl');

@@ -5,3 +5,6 @@ jsconfig.json
 *.txt
 *.md
 *.pdf
+tests/**
+.github/**
+

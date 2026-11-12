@@ -1,0 +1,9 @@
+{
+  "name": "intranet-pisqueria",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Intranet Pisquera de Chile S.A. (CCU)",
+  "scripts": {
+    "test": "node --test 'tests/*.test.js'"
+  }
+}

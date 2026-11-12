@@ -106,8 +106,7 @@
   <div id="modal" class="modal hidden"></div>
   <div id="toast" class="toast"></div>
 
-  <script id="cfg-data" type="application/json"><?!= cfg ?></script>
-  <script>const CFG = JSON.parse(document.getElementById('cfg-data').textContent);</script>
+  <script>const CFG = <?!= cfg ?>;</script>
   <?!= include('App') ?>
 </body>
 </html>
