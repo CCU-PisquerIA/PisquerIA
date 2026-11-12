@@ -62,6 +62,7 @@ const I = {
   pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.1"/>',
   grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
   send: '<path d="M4.5 12 20 4.5 15 20l-3.2-6.8z"/><path d="m11.8 13.2 8.2-8.7"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>'
 };
@@ -1146,6 +1147,37 @@ const ACT = {
   }
 };
 
+/* ---------- Tema claro / oscuro ---------- */
+// La preferencia se guarda en este navegador (localStorage). Sin elección, se sigue la del sistema.
+function temaActual() {
+  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+}
+
+function aplicarTema(tema, guardar) {
+  document.documentElement.setAttribute('data-theme', tema);
+  if (guardar) { try { localStorage.setItem('pq_tema', tema); } catch (e) { /* sin almacenamiento: solo esta vista */ } }
+  const b = $('#btnTema');
+  b.setAttribute('aria-checked', String(tema === 'dark'));
+  b.title = tema === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro';
+}
+
+// Cambio con fundido: View Transitions donde exista; si no, transición de colores. Sin animación si el
+// usuario pidió reducir movimiento en su sistema.
+function cambiarTema() {
+  const nuevo = temaActual() === 'dark' ? 'light' : 'dark';
+  const reducir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reducir) { aplicarTema(nuevo, true); return; }
+  if (document.startViewTransition) {
+    document.startViewTransition(() => aplicarTema(nuevo, true));
+    return;
+  }
+  const r = document.documentElement;
+  r.classList.add('tema-anim');
+  aplicarTema(nuevo, true);
+  clearTimeout(cambiarTema.t);
+  cambiarTema.t = setTimeout(() => r.classList.remove('tema-anim'), 500);
+}
+
 /* ---------- Asistente (Gemini) ---------- */
 // Avatar "Racimo amigo": la uva del frente del racimo del logo, con cara
 const AVATAR = '<svg viewBox="0 0 256 256" aria-hidden="true" focusable="false"><circle cx="128" cy="128" r="128" fill="#fff"/><g transform="translate(122 132) scale(.72) translate(-128 -128)"><path fill="#9AB43A" d="M40.50,104.29 A48,42 -25 0 1 127.50,63.71 A48,42 -25 0 1 40.50,104.29 Z"/><path fill="#5E8F2E" d="M150,70 A40,40 0 0 1 206,30 A40,40 0 0 1 150,70 Z"/><path fill="#9A1A48" d="M57.28,162.59 A84,76 -10 0 1 222.72,133.41 A84,76 -10 0 1 57.28,162.59 Z"/><g fill="#fff"><ellipse cx="112" cy="146" rx="12" ry="17"/><ellipse cx="164" cy="138" rx="12" ry="17"/><path d="M112,180 A34,34 0 0 0 174,170 A46,30 -8 0 1 112,180 Z"/></g></g></svg>';
@@ -1293,6 +1325,9 @@ async function iniciar() {
   $('#icInfo').innerHTML = ic('info', 16);
   $('#anio').textContent = new Date().getFullYear();
   iniciarChat();
+  $('#icTema').innerHTML = ic('moon', 22);
+  aplicarTema(temaActual(), false);
+  $('#btnTema').addEventListener('click', cambiarTema);
 
   document.querySelectorAll('[data-ver]').forEach(b => {
     b.innerHTML = ic('eye', 18);
