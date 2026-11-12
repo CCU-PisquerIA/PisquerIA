@@ -10,7 +10,7 @@ function loadBackend(overrides = {}) {
   const sandbox = {
     Logger: { log: () => {} },
     Session: {
-      getActiveUser: () => ({ getEmail: () => 'usuario@pisqueradechile.cl' })
+      getActiveUser: () => ({ getEmail: () => 'usuario@ccu.cl' })
     },
     PropertiesService: {
       getScriptProperties: () => ({
@@ -87,7 +87,8 @@ function loadBackend(overrides = {}) {
   leer_,
   guardar_,
   borrar_,
-  trozos_
+  trozos_,
+  sembrar_
 });
 `;
 

@@ -8,7 +8,7 @@ const APP = {
   MAX_INTENTOS: 5,
   BLOQUEO_MIN: 15,
   REGISTRO_ABIERTO: true,
-  DOMINIOS_REGISTRO: ['pisqueradechile.cl', 'ccu.cl'],
+  DOMINIOS_REGISTRO: ['ccu.cl'],
   CALENDARIO: 'Intranet · Pisquera de Chile',
   CARPETA_DOCS: 'Documentos Técnicos PisquerIA',
   MAX_ARCHIVO_MB: 10
@@ -63,7 +63,7 @@ function doGet() {
   let activeEmail = '';
 
   try {
-    activeEmail = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+    activeEmail = correoActivo_();
     if (activeEmail) {
       const u = ssoPerfil_(activeEmail);
       ssoUser = publico_(u);
@@ -83,7 +83,7 @@ function doGet() {
     dominios: APP.DOMINIOS_REGISTRO,
     maxArchivoMb: APP.MAX_ARCHIVO_MB,
     extensiones: Object.keys(ARCHIVOS_PERMITIDOS),
-    ssoEmail: activeEmail,
+    ssoEmail: ssoError ? '' : activeEmail, // solo si la cuenta fue aceptada
     ssoUser: ssoUser,
     ssoToken: ssoToken,
     ssoError: ssoError
@@ -253,34 +253,77 @@ function sembrar_(ss) {
 /* =====================================================================
  * AUTENTICACIÓN Y SESIONES
  * ===================================================================*/
+const MSG_SIN_CUENTA = 'No detectamos tu cuenta corporativa. Abre la intranet con tu sesión de Google @' +
+  APP.DOMINIOS_REGISTRO.join(' o @') + '.';
+
+// Ingreso. Las cuentas corporativas se identifican SOLO con la sesión de Google que verifica
+// el servidor: el correo que envía el navegador nunca basta para entrar. Las cuentas de prueba
+// (@demo.cl) pueden ingresar escribiendo su correo, solo si MODO_DEMO está activo y ya existen.
 function login(email) {
   try {
-    email = String(email || '').trim().toLowerCase();
-    if (!email) throw new Error('Ingresa tu correo corporativo.');
+    const escrito = String(email || '').trim().toLowerCase();
+    const activo = correoActivo_();
 
     const cache = CacheService.getScriptCache();
-    const kf = 'f_' + email;
+    const kf = 'f_' + (escrito || activo || 'anonimo');
     const fallos = Number(cache.get(kf) || 0);
     if (fallos >= APP.MAX_INTENTOS) {
       throw new Error('Demasiados intentos. Espera ' + APP.BLOQUEO_MIN + ' minutos.');
     }
 
-    const u = ssoPerfil_(email);
+    let u;
+    if (escrito && dominio_(escrito) === 'demo.cl') {
+      try {
+        u = cuentaDemo_(escrito);
+      } catch (e) {
+        cache.put(kf, String(fallos + 1), APP.BLOQUEO_MIN * 60);
+        log_(escrito, 'login de prueba fallido', e.message);
+        throw e;
+      }
+    } else {
+      if (!activo) throw new Error(MSG_SIN_CUENTA);
+      if (escrito && escrito !== activo) {
+        log_(activo, 'login rechazado', 'intentó ingresar como ' + escrito);
+        throw new Error('Tu sesión de Google es ' + activo + '. Para usar otra cuenta, cámbiala en Google y vuelve a abrir la intranet.');
+      }
+      u = ssoPerfil_(activo);
+    }
+
     cache.remove(kf);
     const usuario = publico_(u);
     const token = abrirSesion_(usuario);
     guardar_('Usuarios', { id: u.id, ultimoAcceso: ahora_() });
-    log_(email, 'login', '');
+    log_(u.email, u.email === activo ? 'login sso' : 'login de prueba', '');
     return JSON.stringify({ ok: true, token: token, usuario: usuario });
   } catch (e) {
     return JSON.stringify({ ok: false, error: e.message });
   }
 }
 
+// Correo de la cuenta de Google con la que se abrió la intranet (verificado por Google).
+// Con "Ejecutar como: Yo" solo llega si el usuario es del mismo dominio que el dueño del script.
+function correoActivo_() {
+  try { return String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); }
+  catch (e) { return ''; }
+}
+
+function dominio_(email) {
+  const p = String(email || '').toLowerCase().split('@');
+  return p.length === 2 ? p[1] : '';
+}
+
+function cuentaDemo_(email) {
+  if (!APP.MODO_DEMO) throw new Error('Las cuentas de prueba están deshabilitadas.');
+  const u = leer_('Usuarios').find(function (x) { return x.email.toLowerCase() === email; });
+  if (!u) throw new Error('No existe la cuenta de prueba ' + email + '.');
+  if (u.activo !== 'SI') throw new Error('Tu cuenta está desactivada. Contacta al administrador.');
+  return u;
+}
+
 function ssoPerfil_(email) {
   email = String(email || '').trim().toLowerCase();
   if (!email || email.indexOf('@') < 0) throw new Error('Ingresa un correo electrónico válido.');
-  validarDominio_(email);
+  validarDominio_(email, true);
   let u = leer_('Usuarios').find(function (x) { return x.email.toLowerCase() === email; });
   if (!u) {
     if (!APP.REGISTRO_ABIERTO) {
@@ -305,11 +348,12 @@ function ssoPerfil_(email) {
   return u;
 }
 
-function validarDominio_(email) {
+// soloCorporativo: para identidades de Google (SSO), donde nunca se acepta el dominio de prueba
+function validarDominio_(email, soloCorporativo) {
   email = String(email || '').trim().toLowerCase();
   if (!email || email.indexOf('@') < 0) throw new Error('Ingresa un correo electrónico válido.');
   const permitidos = (APP.DOMINIOS_REGISTRO || []).map(function (d) { return d.toLowerCase(); });
-  if (APP.MODO_DEMO && permitidos.indexOf('demo.cl') < 0) {
+  if (APP.MODO_DEMO && !soloCorporativo && permitidos.indexOf('demo.cl') < 0) {
     permitidos.push('demo.cl');
   }
   if (permitidos.length === 0) return;
@@ -958,9 +1002,9 @@ function registrarse(d) {
     d = d || {};
     const nombre = txt_(d.nombre, 80, true, 'nombre');
     const area = txt_(d.area, 60);
-    const email = String(d.email || '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Correo corporativo no válido.');
-    validarDominio_(email);
+    const email = correoActivo_(); // el correo del formulario se ignora: solo vale la sesión de Google
+    if (!email) throw new Error(MSG_SIN_CUENTA);
+    validarDominio_(email, true);
 
     const cache = CacheService.getScriptCache();
     const intentos = Number(cache.get('reg_' + email) || 0);

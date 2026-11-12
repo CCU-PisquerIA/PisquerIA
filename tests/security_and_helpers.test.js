@@ -33,13 +33,25 @@ test('seguro_ mitigates formula injection in Google Sheets', () => {
 });
 
 test('validarDominio_ enforces corporate domain whitelist', () => {
-  assert.doesNotThrow(() => {
-    app.validarDominio_('operador@pisqueradechile.cl');
-  });
+  assert.deepStrictEqual(Array.from(app.APP.DOMINIOS_REGISTRO), ['ccu.cl']);
 
   assert.doesNotThrow(() => {
     app.validarDominio_('mantencion@ccu.cl');
   });
+
+  assert.doesNotThrow(() => {
+    app.validarDominio_('  Operador@CCU.cl ');
+  });
+
+  assert.throws(
+    () => app.validarDominio_('operador@pisqueradechile.cl'),
+    /Dominio no autorizado \(@pisqueradechile\.cl\)/
+  );
+
+  // Solo coincidencia exacta del dominio: sin subdominios ni dominios que lo imiten
+  assert.throws(() => app.validarDominio_('x@otro.ccu.cl'), /Dominio no autorizado/);
+  assert.throws(() => app.validarDominio_('x@ccu.cl.evil.com'), /Dominio no autorizado/);
+  assert.throws(() => app.validarDominio_('x@fakeccu.cl'), /Dominio no autorizado/);
 
   // Allowed when MODO_DEMO is true
   assert.doesNotThrow(() => {
