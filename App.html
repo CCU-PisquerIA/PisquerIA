@@ -2,7 +2,7 @@
 /* =====================================================================
  * INTRANET PISQUERA DE CHILE · Cliente
  * ===================================================================*/
-const S = { token: null, user: null, view: 'inicio', params: {}, cache: {}, rid: 0, cal: null, mesCache: {}, recTimers: [], avisados: new Set(), filtroTareas: 'mias', qTareas: '' };
+const S = { chat: [], chatEstado: null, chatPensando: false, token: null, user: null, view: 'inicio', params: {}, cache: {}, rid: 0, cal: null, mesCache: {}, recTimers: [], avisados: new Set(), filtroTareas: 'mias', qTareas: '' };
 const RANK = { lector: 1, editor: 2, admin: 3 };
 const ROL_TXT = { admin: 'Administrador', editor: 'Editor', lector: 'Lector' };
 const AREAS = ['Envasado', 'Destilación', 'Fermentación', 'Recepción', 'Bodega', 'Utilidades'];
@@ -62,6 +62,7 @@ const I = {
   pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.1"/>',
   grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  send: '<path d="M4.5 12 20 4.5 15 20l-3.2-6.8z"/><path d="m11.8 13.2 8.2-8.7"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>'
 };
 
@@ -170,6 +171,7 @@ async function onRegistro(ev) {
 
 function entrar(token, usuario) {
   S.token = token; S.user = usuario; S.cache = {};
+  reiniciarChat(true);
   store.set('pq_t', token);
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
@@ -189,6 +191,7 @@ function salir(msg) {
   clearInterval(S.recInt); (S.recTimers || []).forEach(clearTimeout); S.recTimers = [];
   S.cal = null; S.mesCache = {};
   store.set('pq_t', null);
+  reiniciarChat(false);
   cerrarModal();
   mostrarLogin(msg);
 }
@@ -1112,6 +1115,103 @@ const ACT = {
   }
 };
 
+/* ---------- Asistente (Gemini) ---------- */
+// Avatar "Racimo amigo": la uva del frente del racimo del logo, con cara
+const AVATAR = '<svg viewBox="0 0 256 256" aria-hidden="true" focusable="false"><circle cx="128" cy="128" r="128" fill="#fff"/><g transform="translate(122 132) scale(.72) translate(-128 -128)"><path fill="#9AB43A" d="M40.50,104.29 A48,42 -25 0 1 127.50,63.71 A48,42 -25 0 1 40.50,104.29 Z"/><path fill="#5E8F2E" d="M150,70 A40,40 0 0 1 206,30 A40,40 0 0 1 150,70 Z"/><path fill="#9A1A48" d="M57.28,162.59 A84,76 -10 0 1 222.72,133.41 A84,76 -10 0 1 57.28,162.59 Z"/><g fill="#fff"><ellipse cx="112" cy="146" rx="12" ry="17"/><ellipse cx="164" cy="138" rx="12" ry="17"/><path d="M112,180 A34,34 0 0 0 174,170 A46,30 -8 0 1 112,180 Z"/></g></g></svg>';
+const SUGERENCIAS = ['¿Qué máquinas hay en Envasado?', '¿Qué guías de funcionamiento están publicadas?', 'Resume mis tareas pendientes', '¿Dónde encuentro la ficha técnica de una máquina?'];
+
+function chatAbierto() { return !$('#chatPanel').classList.contains('hidden'); }
+
+async function abrirChat(abrir = !chatAbierto()) {
+  const estaba = chatAbierto();
+  $('#chatPanel').classList.toggle('hidden', !abrir);
+  $('#app').classList.toggle('chat-abierto', abrir);
+  $('#chatFab').setAttribute('aria-expanded', String(abrir));
+  if (!abrir) { if (estaba) $('#chatFab').focus(); return; }
+  pintarChat();
+  $('#chatForm').q.focus();
+  if (!S.chatEstado) {
+    try { S.chatEstado = await call('estadoAsistente'); } catch (e) { S.chatEstado = null; }
+    pintarChat();
+  }
+}
+
+function textoChat(t) {
+  // Normaliza el Markdown de Gemini al formato simple de md(): viñetas "- " y **negrita**
+  return md(String(t).replace(/^\s*[*•]\s+/gm, '- ').replace(/^#{1,6}\s*(.+)$/gm, '**$1**'));
+}
+
+function pintarChat() {
+  const box = $('#chatMsgs');
+  const est = S.chatEstado;
+  const aviso = est && !est.activo
+    ? `<div class="notice-sm" style="margin-top:14px">${est.admin
+        ? 'Falta configurar el asistente: agrega la propiedad <b>GEMINI_API_KEY</b> en Apps Script → Configuración del proyecto → Propiedades de la secuencia de comandos.'
+        : 'El asistente todavía no está disponible. Avisa a un administrador.'}</div>` : '';
+  if (!S.chat.length) {
+    const nombre = esc(String(S.user ? S.user.nombre : '').split(' ')[0]);
+    box.innerHTML = `<div class="chat-hola"><span class="chat-ava xl">${AVATAR}</span>
+      <h3>Hola${nombre ? ', ' + nombre : ''}, soy PisquerIA</h3>
+      <p>Te ayudo a encontrar máquinas, guías, documentos y tus tareas de la intranet.</p>
+      <div class="chat-sug">${SUGERENCIAS.map(s => `<button type="button" data-sug="${esc(s)}">${esc(s)}</button>`).join('')}</div>${aviso}</div>`;
+  } else {
+    box.innerHTML = S.chat.map(m => m.rol === 'usuario'
+      ? `<div class="cm cm-u">${esc(m.texto)}</div>`
+      : `<div class="cm-b"><span class="chat-ava sm">${AVATAR}</span><div class="cm cm-a${m.error ? ' err' : ''}">${m.error ? esc(m.texto) : textoChat(m.texto)}</div></div>`
+    ).join('') + (S.chatPensando
+      ? `<div class="cm-b"><span class="chat-ava sm">${AVATAR}</span><div class="cm cm-a typing" aria-label="PisquerIA está escribiendo"><span></span><span></span><span></span></div></div>` : '');
+  }
+  box.scrollTop = box.scrollHeight;
+  const f = $('#chatForm');
+  $('button', f).disabled = !!S.chatPensando;
+}
+
+async function enviarChat(texto) {
+  texto = String(texto || '').trim();
+  if (!texto || S.chatPensando) return;
+  S.chat.push({ rol: 'usuario', texto });
+  S.chatPensando = true;
+  pintarChat();
+  try {
+    const historial = S.chat.filter(m => !m.error).slice(-12).map(({ rol, texto }) => ({ rol, texto }));
+    const r = await call('asistente', { mensajes: historial });
+    S.chat.push({ rol: 'asistente', texto: r.texto });
+  } catch (e) {
+    S.chat.push({ rol: 'asistente', texto: e.message, error: true });
+  } finally {
+    S.chatPensando = false;
+    store.set('pq_chat', JSON.stringify(S.chat.slice(-30)));
+    pintarChat();
+  }
+}
+
+function iniciarChat() {
+  $('#chatFab').innerHTML = AVATAR;
+  $('#chatAvaHead').innerHTML = AVATAR;
+  $('#chatNuevo').innerHTML = ic('edit', 18);
+  $('#chatCerrar').innerHTML = ic('x', 20);
+  $('#chatForm button').innerHTML = ic('send', 20);
+  $('#chatFab').addEventListener('click', () => abrirChat());
+  $('#chatCerrar').addEventListener('click', () => abrirChat(false));
+  $('#chatNuevo').addEventListener('click', () => { if (S.chatPensando) return; S.chat = []; store.set('pq_chat', null); pintarChat(); $('#chatForm').q.focus(); });
+  $('#chatMsgs').addEventListener('click', e => { const b = e.target.closest('[data-sug]'); if (b) enviarChat(b.dataset.sug); });
+  const f = $('#chatForm'), q = f.q;
+  const ajustar = () => { q.style.height = 'auto'; q.style.height = Math.min(q.scrollHeight, 120) + 'px'; };
+  q.addEventListener('input', ajustar);
+  q.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); f.requestSubmit(); } });
+  f.addEventListener('submit', e => { e.preventDefault(); const t = q.value; q.value = ''; ajustar(); enviarChat(t); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && chatAbierto() && $('#modal').classList.contains('hidden')) abrirChat(false); });
+}
+
+function reiniciarChat(desdeSesion) {
+  S.chat = [];
+  S.chatEstado = null;
+  S.chatPensando = false;
+  if (desdeSesion) { try { S.chat = JSON.parse(store.get('pq_chat') || '[]').filter(m => m && m.texto); } catch (e) { S.chat = []; } }
+  else store.set('pq_chat', null);
+  if ($('#chatPanel')) abrirChat(false);
+}
+
 /* ---------- Eventos globales ---------- */
 document.addEventListener('click', e => {
   const modal = $('#modal');
@@ -1161,6 +1261,7 @@ async function iniciar() {
   $('#menuBtn').innerHTML = ic('menu');
   $('#icInfo').innerHTML = ic('info', 16);
   $('#anio').textContent = new Date().getFullYear();
+  iniciarChat();
 
   document.querySelectorAll('[data-ver]').forEach(b => {
     b.innerHTML = ic('eye', 18);
