@@ -337,6 +337,7 @@ function tablaGuias(lista) {
 }
 
 function linkDoc(d) {
+  if (d.archivo) return `<button class="btn btn-sm" data-act="verDocumento" data-id="${esc(d.id)}">${ic('eye', 15)} Ver</button>`;
   return /^https:\/\//i.test(d.url)
     ? `<a class="btn btn-sm" href="${esc(d.url)}" target="_blank" rel="noopener">Abrir ${ic('ext', 15)}</a>`
     : '<span class="muted sm">Sin archivo</span>';
@@ -684,9 +685,9 @@ const VIEWS = {
 };
 
 /* ---------- Modales y formularios ---------- */
-function abrirModal(html) {
+function abrirModal(html, clase = '') {
   const m = $('#modal');
-  m.innerHTML = `<div class="m-box" role="dialog" aria-modal="true">${html}</div>`;
+  m.innerHTML = `<div class="m-box ${clase}" role="dialog" aria-modal="true">${html}</div>`;
   m.classList.remove('hidden');
   setTimeout(() => { const f = m.querySelector('input:not([readonly]),select,textarea'); if (f) f.focus(); }, 60);
 }
@@ -695,9 +696,10 @@ function cerrarModal() {
   const m = $('#modal');
   m.classList.add('hidden');
   m.innerHTML = '';
+  liberarArchivo();
 }
 
-function formModal({ titulo, sub = '', campos, valores = {}, boton = 'Guardar', onSubmit }) {
+function formModal({ titulo, sub = '', campos, valores = {}, boton = 'Guardar', cargando = 'Guardando…', onSubmit }) {
   const fields = campos.map(c => {
     const v = valores[c.k] ?? c.def ?? '';
     const req = c.req ? 'required' : '';
@@ -709,6 +711,8 @@ function formModal({ titulo, sub = '', campos, valores = {}, boton = 'Guardar', 
       }).join('')}</select>`;
     } else if (c.type === 'checkbox') {
       return `<label class="chk ${c.full ? 'fld full' : ''}" style="flex-direction:row"><input type="checkbox" name="${c.k}" ${v ? 'checked' : ''}> ${esc(c.label)}</label>`;
+    } else if (c.type === 'file') {
+      inp = `<input name="${c.k}" type="file" ${req} ${c.accept ? `accept="${esc(c.accept)}"` : ''}>`;
     } else if (c.type === 'textarea') {
       inp = `<textarea name="${c.k}" rows="${c.rows || 4}" ${req} ${c.max ? `maxlength="${c.max}"` : ''} ${c.ph ? `placeholder="${esc(c.ph)}"` : ''}>${esc(v)}</textarea>`;
     } else {
@@ -729,10 +733,10 @@ function formModal({ titulo, sub = '', campos, valores = {}, boton = 'Guardar', 
     const f = e.target, b = $('button[type=submit]', f);
     if (!f.checkValidity()) { $('#mErr').textContent = 'Completa los campos obligatorios (*).'; f.reportValidity(); return; }
     const datos = Object.fromEntries(new FormData(f));
-    b.disabled = true; $('#mErr').textContent = '';
+    b.disabled = true; b.textContent = cargando; $('#mErr').textContent = '';
     try { await onSubmit(datos); cerrarModal(); }
     catch (x) { $('#mErr').textContent = x.message; }
-    finally { b.disabled = false; }
+    finally { b.disabled = false; b.textContent = boton; }
   });
 }
 
@@ -791,6 +795,25 @@ async function formGuia(valores = {}) {
   });
 }
 
+function leerArchivo(f) {
+  const max = (CFG.maxArchivoMb || 10) * 1024 * 1024;
+  const ext = (f.name.split('.').pop() || '').toLowerCase();
+  if (CFG.extensiones && !CFG.extensiones.includes(ext)) return Promise.reject(new Error('Tipo de archivo no permitido (.' + ext + ').'));
+  if (f.size > max) return Promise.reject(new Error(`El archivo pesa ${(f.size / 1048576).toFixed(1)} MB; el máximo es ${CFG.maxArchivoMb || 10} MB.`));
+  return new Promise((ok, ko) => {
+    const r = new FileReader();
+    r.onload = () => ok({ nombre: f.name, mime: f.type, base64: String(r.result).split(',')[1] || '' });
+    r.onerror = () => ko(new Error('No se pudo leer el archivo.'));
+    r.readAsDataURL(f);
+  });
+}
+
+function liberarArchivo() {
+  if (!S.blobUrl) return;
+  const u = S.blobUrl; S.blobUrl = null;
+  setTimeout(() => URL.revokeObjectURL(u), 60000); // da tiempo a la pestaña nueva o la descarga
+}
+
 async function formDocumento(valores = {}) {
   const maqs = await opcionesMaquinas();
   formModal({
@@ -801,10 +824,18 @@ async function formDocumento(valores = {}) {
       { k: 'maquinaId', label: 'Máquina', type: 'select', opts: maqs, req: true, ph: 'Selecciona una máquina' },
       { k: 'tipo', label: 'Tipo', type: 'select', opts: TIPOS_DOC, req: true },
       { k: 'version', label: 'Versión', def: '1.0' },
-      { k: 'url', label: 'Enlace al archivo', type: 'url', ph: 'https:\/\/drive.google.com/…', hint: 'Opcional. Enlace de Drive u otro sitio (https).' }
+      { k: 'archivo', label: valores.archivo ? 'Reemplazar archivo' : 'Archivo', type: 'file', full: true,
+        accept: (CFG.extensiones || []).map(x => '.' + x).join(','),
+        hint: (valores.archivo ? `Archivo actual: ${valores.nombreArchivo || 'adjunto'}. Adjunta otro solo si quieres reemplazarlo. ` : '') +
+          `PDF, imágenes, Office o DWG, hasta ${CFG.maxArchivoMb || 10} MB. Se guarda en el repositorio protegido de Drive.` },
+      { k: 'url', label: 'Enlace externo', type: 'url', full: true, ph: 'https:\/\/…', hint: 'Opcional. Úsalo solo para documentos que viven fuera del repositorio.' }
     ],
+    cargando: 'Subiendo…',
     onSubmit: async d => {
-      await call('guardarDocumento', { ...d, id: valores.id || '' });
+      const f = d.archivo; delete d.archivo;
+      const datos = { ...d, id: valores.id || '' };
+      if (f && f.size) datos.archivo = await leerArchivo(f);
+      await call('guardarDocumento', datos);
       toast(valores.id ? 'Documento actualizado' : 'Documento creado');
       refrescar();
     }
@@ -1016,6 +1047,25 @@ const ACT = {
   async eliminarGuia(id) {
     if (!await confirmar('Eliminar guía', `Se eliminará la guía ${id}. Esta acción no se puede deshacer.`)) return;
     await call('eliminarGuia', { id }); toast('Guía eliminada'); go('guias');
+  },
+  async verDocumento(id) {
+    toast('Cargando documento…');
+    const a = await call('archivoDocumento', { id });
+    const bin = atob(a.base64), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    liberarArchivo();
+    const url = S.blobUrl = URL.createObjectURL(new Blob([bytes], { type: a.mime }));
+    const esPdf = a.mime === 'application/pdf', esImg = /^image\/(png|jpeg|webp)$/.test(a.mime);
+    if (!esPdf && !esImg) {
+      const l = document.createElement('a'); l.href = url; l.download = a.nombre;
+      document.body.appendChild(l); l.click(); l.remove();
+      toast('Descarga iniciada: ' + a.nombre);
+      return;
+    }
+    abrirModal(`<div class="m-head"><div><h2>${esc(a.nombre)}</h2><p class="muted">Documento ${esc(id)} · repositorio protegido</p></div>
+        <button type="button" class="icon-btn" data-close title="Cerrar">${ic('x')}</button></div>
+      <div class="visor">${esPdf ? `<iframe src="${url}" title="${esc(a.nombre)}"></iframe>` : `<img src="${url}" alt="${esc(a.nombre)}">`}</div>
+      <div class="m-foot"><a class="btn" href="${url}" target="_blank" rel="noopener">${ic('ext', 16)} Abrir en pestaña</a><a class="btn btn-primary" href="${url}" download="${esc(a.nombre)}">Descargar</a></div>`, 'm-visor');
   },
   nuevoDocumento(maquinaId) { return formDocumento({ maquinaId: maquinaId || '' }); },
   async editarDocumento(id) { return formDocumento(await call('documento', { id })); },

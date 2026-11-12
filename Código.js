@@ -9,7 +9,25 @@ const APP = {
   BLOQUEO_MIN: 15,
   REGISTRO_ABIERTO: true,
   DOMINIOS_REGISTRO: ['pisqueradechile.cl', 'ccu.cl'],
-  CALENDARIO: 'Intranet · Pisquera de Chile'
+  CALENDARIO: 'Intranet · Pisquera de Chile',
+  CARPETA_DOCS: 'Documentos Técnicos PisquerIA',
+  MAX_ARCHIVO_MB: 10
+};
+
+// Archivos que se aceptan en el repositorio documental (extensión → tipos MIME válidos)
+const ARCHIVOS_PERMITIDOS = {
+  pdf:  ['application/pdf'],
+  png:  ['image/png'],
+  jpg:  ['image/jpeg'],
+  jpeg: ['image/jpeg'],
+  webp: ['image/webp'],
+  doc:  ['application/msword'],
+  docx: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  xls:  ['application/vnd.ms-excel'],
+  xlsx: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+  ppt:  ['application/vnd.ms-powerpoint'],
+  pptx: ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  dwg:  ['application/acad', 'image/vnd.dwg', 'application/octet-stream']
 };
 
 const ROLES = { lector: 1, editor: 2, admin: 3 };
@@ -22,7 +40,7 @@ const ESQUEMA = {
   Usuarios:   ['id', 'email', 'nombre', 'area', 'rol', 'salt', 'hash', 'activo', 'creado', 'ultimoAcceso', 'prefs'],
   Maquinas:   ['id', 'nombre', 'area', 'clase', 'descripcion', 'ubicacion', 'fabricante', 'estado', 'actualizado'],
   Guias:      ['id', 'titulo', 'maquinaId', 'version', 'estado', 'resumen', 'contenido', 'autor', 'actualizado'],
-  Documentos: ['id', 'titulo', 'maquinaId', 'tipo', 'url', 'version', 'actualizado'],
+  Documentos: ['id', 'titulo', 'maquinaId', 'tipo', 'url', 'version', 'actualizado', 'fileId', 'nombreArchivo', 'mimeType', 'tamano', 'autor'],
   Tareas:     ['id', 'titulo', 'descripcion', 'estado', 'prioridad', 'vence', 'asignadoA', 'creadoPor', 'creado', 'actualizado'],
   Registro:   ['fecha', 'email', 'accion', 'detalle']
 };
@@ -56,6 +74,8 @@ function doGet() {
     demo: APP.MODO_DEMO,
     registro: APP.REGISTRO_ABIERTO,
     dominios: APP.DOMINIOS_REGISTRO,
+    maxArchivoMb: APP.MAX_ARCHIVO_MB,
+    extensiones: Object.keys(ARCHIVOS_PERMITIDOS),
     ssoEmail: activeEmail,
     ssoUser: ssoUser,
     ssoToken: ssoToken,
@@ -107,6 +127,17 @@ function inicializar() {
     props.setProperty('CAL_ID', cal.getId());
   }
 
+  // Carpeta del repositorio documental. Para usar la Unidad Compartida, crea ahí la carpeta
+  // y guarda su ID en la propiedad DOCS_FOLDER_ID antes de ejecutar inicializar().
+  let carpeta = null;
+  try { carpeta = props.getProperty('DOCS_FOLDER_ID') && DriveApp.getFolderById(props.getProperty('DOCS_FOLDER_ID')); }
+  catch (e) { carpeta = null; }
+  if (!carpeta) {
+    carpeta = DriveApp.createFolder(APP.CARPETA_DOCS);
+    carpeta.setDescription('Repositorio documental de la intranet. No compartir: la intranet entrega los archivos.');
+    props.setProperty('DOCS_FOLDER_ID', carpeta.getId());
+  }
+
   ['Hoja 1', 'Sheet1', 'Hoja1'].forEach(function (n) {
     const sh = ss.getSheetByName(n);
     if (sh && ss.getSheets().length > 1) ss.deleteSheet(sh);
@@ -115,6 +146,7 @@ function inicializar() {
   sembrar_(ss);
   Logger.log('Base de datos lista: ' + ss.getUrl());
   Logger.log('Calendario del equipo: ' + cal.getName());
+  Logger.log('Carpeta de documentos: ' + carpeta.getUrl());
 }
 
 function sembrar_(ss) {
@@ -343,7 +375,8 @@ const ACCIONES = {
   guardarGuia:       ['editor', guardarGuia_],
   eliminarGuia:      ['admin',  eliminarGuia_],
   documentos:        ['lector', function (d, u) { return catalogo_(u).D; }],
-  documento:         ['lector', function (d) { return buscarPorId_('Documentos', d.id, 'El documento no existe.'); }],
+  documento:         ['lector', function (d) { return docPublico_(buscarPorId_('Documentos', d.id, 'El documento no existe.')); }],
+  archivoDocumento:  ['lector', archivoDocumento_],
   guardarDocumento:  ['editor', guardarDocumento_],
   eliminarDocumento: ['admin',  eliminarDocumento_],
   perfil:            ['lector', perfil_],
@@ -397,8 +430,12 @@ function catalogo_(u) {
     g.maquinaNombre = m.nombre || '—';
     g.area = m.area || '—';
   });
-  D.forEach(function (d) { d.maquinaNombre = (mapa[d.maquinaId] || {}).nombre || '—'; });
-  return { M: M, G: G, D: D };
+  const docs = D.map(function (d) {
+    const p = docPublico_(d);
+    p.maquinaNombre = (mapa[d.maquinaId] || {}).nombre || '—';
+    return p;
+  });
+  return { M: M, G: G, D: docs };
 }
 
 function sinContenido_(g) {
@@ -529,25 +566,117 @@ function guardarDocumento_(d, u) {
   const url = txt_(d.url, 500);
   if (url && !/^https:\/\//i.test(url)) throw new Error('El enlace debe comenzar con https://');
   const nuevo = !d.id;
-  if (!nuevo) buscarPorId_('Documentos', d.id, 'El documento no existe.');
-  const id = nuevo ? siguienteId_('Documentos', 'DOC') : d.id;
-  guardar_('Documentos', {
-    id: id,
+  const previo = nuevo ? null : buscarPorId_('Documentos', d.id, 'El documento no existe.');
+  const fila = {
     titulo: txt_(d.titulo, 160, true, 'título'),
     maquinaId: d.maquinaId,
     tipo: txt_(d.tipo, 60, true, 'tipo'),
     url: url,
     version: txt_(d.version, 12) || '1.0',
     actualizado: hoy_()
-  });
-  log_(u.email, nuevo ? 'crear documento' : 'editar documento', id);
-  return { id: id };
+  };
+  const blob = d.archivo ? blobArchivo_(d.archivo) : null;
+  fila.id = nuevo ? siguienteId_('Documentos', 'DOC') : d.id;
+
+  // El binario va a la carpeta protegida de Drive; en la hoja solo quedan los metadatos
+  let creado = null;
+  if (blob) {
+    creado = carpetaDocs_().createFile(blob);
+    creado.setDescription(fila.id + ' · ' + fila.titulo);
+    fila.fileId = creado.getId();
+    fila.nombreArchivo = blob.getName();
+    fila.mimeType = blob.getContentType();
+    fila.tamano = String(blob.getBytes().length);
+    fila.autor = u.email;
+  }
+  try {
+    guardar_('Documentos', fila);
+  } catch (e) {
+    if (creado) creado.setTrashed(true);
+    throw e;
+  }
+  if (creado && previo && previo.fileId) papelera_(previo.fileId);
+  log_(u.email, nuevo ? 'crear documento' : 'editar documento', fila.id + (blob ? ' (archivo: ' + fila.nombreArchivo + ')' : ''));
+  return { id: fila.id };
 }
 
 function eliminarDocumento_(d, u) {
+  const doc = buscarPorId_('Documentos', d.id, 'El documento no existe.');
   borrar_('Documentos', d.id);
+  if (doc.fileId) papelera_(doc.fileId);
   log_(u.email, 'eliminar documento', d.id);
   return true;
+}
+
+// Entrega controlada: el usuario nunca recibe acceso a Drive, solo el contenido vía la intranet
+function archivoDocumento_(d, u) {
+  const doc = buscarPorId_('Documentos', d.id, 'El documento no existe.');
+  if (!doc.fileId) throw new Error('Este documento no tiene un archivo adjunto.');
+  let file;
+  try {
+    file = DriveApp.getFileById(doc.fileId);
+    if (file.isTrashed()) file = null;
+  } catch (e) {
+    file = null;
+  }
+  if (!file) throw new Error('No se encontró el archivo en el repositorio. Avisa a un administrador.');
+  const blob = file.getBlob();
+  log_(u.email, 'ver documento', doc.id);
+  return {
+    nombre: doc.nombreArchivo || file.getName(),
+    mime: doc.mimeType || blob.getContentType(),
+    base64: Utilities.base64Encode(blob.getBytes())
+  };
+}
+
+function docPublico_(d) {
+  const p = Object.assign({}, d, { archivo: !!d.fileId });
+  delete p.fileId;
+  return p;
+}
+
+function carpetaDocs_() {
+  const id = PropertiesService.getScriptProperties().getProperty('DOCS_FOLDER_ID');
+  if (!id) throw new Error('El repositorio de documentos no está configurado. Ejecuta inicializar() en el editor.');
+  return DriveApp.getFolderById(id);
+}
+
+// Valida nombre, extensión y tamaño declarado. No toca servicios de Google (se prueba con Node).
+function validarArchivo_(a) {
+  if (!a || typeof a !== 'object') throw new Error('Adjunta un archivo válido.');
+  const nombre = txt_(a.nombre, 180, true, 'archivo').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_');
+  const ext = ((nombre.match(/\.([a-z0-9]+)$/i) || [])[1] || '').toLowerCase();
+  const tipos = ARCHIVOS_PERMITIDOS[ext];
+  if (!tipos) throw new Error('Tipo de archivo no permitido. Usa PDF, imágenes (PNG, JPG, WEBP), Word, Excel, PowerPoint o DWG.');
+  const base64 = String(a.base64 || '').replace(/\s/g, '');
+  if (!base64) throw new Error('El archivo está vacío.');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) throw new Error('El archivo llegó dañado. Vuelve a intentarlo.');
+  const bytes = Math.floor(base64.length * 3 / 4) - (base64.match(/=+$/) || [''])[0].length;
+  if (bytes > APP.MAX_ARCHIVO_MB * 1024 * 1024) throw new Error('El archivo supera el máximo de ' + APP.MAX_ARCHIVO_MB + ' MB.');
+  const mime = String(a.mime || '').toLowerCase();
+  return { nombre: nombre, ext: ext, mime: tipos.indexOf(mime) >= 0 ? mime : tipos[0], base64: base64 };
+}
+
+// Comprueba la firma de los formatos que la intranet muestra en su visor
+function firmaValida_(ext, bytes) {
+  const b = function (i) { return bytes[i] & 0xFF; };
+  if (ext === 'pdf') return b(0) === 0x25 && b(1) === 0x50 && b(2) === 0x44 && b(3) === 0x46;
+  if (ext === 'png') return b(0) === 0x89 && b(1) === 0x50 && b(2) === 0x4E && b(3) === 0x47;
+  if (ext === 'jpg' || ext === 'jpeg') return b(0) === 0xFF && b(1) === 0xD8;
+  if (ext === 'webp') return b(0) === 0x52 && b(1) === 0x49 && b(2) === 0x46 && b(3) === 0x46;
+  return true;
+}
+
+function blobArchivo_(a) {
+  const v = validarArchivo_(a);
+  const bytes = Utilities.base64Decode(v.base64);
+  if (!firmaValida_(v.ext, bytes)) throw new Error('El contenido del archivo no corresponde a su extensión (.' + v.ext + ').');
+  return Utilities.newBlob(bytes, v.mime, v.nombre);
+}
+
+function papelera_(fileId) {
+  try { DriveApp.getFileById(fileId).setTrashed(true); }
+  catch (e) { log_('sistema', 'error al enviar archivo a la papelera', fileId + ': ' + e.message); }
 }
 
 /* =====================================================================
