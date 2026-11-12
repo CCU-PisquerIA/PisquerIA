@@ -6,6 +6,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
   <?!= include('Styles') ?>
+  <script>try{var t=localStorage.getItem('pq_tema');if(t!=='light'&&t!=='dark'){t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 </head>
 <body>
 
@@ -84,6 +85,11 @@
         <button class="sb-toggle" id="sbToggle" title="Contraer menú" aria-label="Contraer menú"></button>
       </div>
       <nav id="nav" class="nav"></nav>
+      <button type="button" class="sb-tema" id="btnTema" role="switch" aria-checked="false" aria-label="Modo oscuro" title="Cambiar a modo oscuro">
+        <span id="icTema" aria-hidden="true"></span>
+        <span class="sb-tema-txt">Modo oscuro</span>
+        <span class="sb-sw" aria-hidden="true"><span class="sb-knob"></span></span>
+      </button>
       <div class="sb-user">
         <div class="avatar" id="avatar"></div>
         <div class="who">
