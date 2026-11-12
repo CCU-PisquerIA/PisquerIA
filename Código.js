@@ -452,7 +452,6 @@ const ACCIONES = {
   perfil:            ['lector', perfil_],
   usuarios:          ['admin',  usuarios_],
   guardarUsuario:    ['admin',  guardarUsuario_],
-  registro:          ['admin',  registro_],
   personas:          ['lector', personas_],
   tareas:            ['lector', tareas_],
   guardarTarea:      ['lector', guardarTarea_],
@@ -797,9 +796,6 @@ function guardarUsuario_(d, u) {
 }
 
 
-function registro_() {
-  return leer_('Registro').slice(-60).reverse();
-}
 
 
 /* =====================================================================
@@ -930,7 +926,7 @@ function contextoAsistente_(u) {
     APP.MODO_DEMO ? '- La intranet está en modo demostración: los datos son ficticios. Menciónalo si te preguntan por datos reales.' : '',
     '',
     'Módulos del menú: Inicio, Máquinas, Guías de funcionamiento, Documentación, Reuniones, Tareas y Mi Perfil' +
-      (ROLES[u.rol] >= ROLES.admin ? '; además Usuarios y Registro de actividad (solo administradores).' : '.') +
+      (ROLES[u.rol] >= ROLES.admin ? '; además Usuarios y accesos (solo administradores).' : '.') +
       ' Permisos: lector consulta; editor crea y edita máquinas, guías y documentos; administrador además elimina y gestiona usuarios.',
     '',
     '=== MÁQUINAS (' + c.M.length + ') ===',
