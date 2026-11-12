@@ -8,7 +8,7 @@ const APP = {
   MAX_INTENTOS: 5,
   BLOQUEO_MIN: 15,
   REGISTRO_ABIERTO: true,
-  DOMINIOS_REGISTRO: [],
+  DOMINIOS_REGISTRO: ['pisqueradechile.cl', 'ccu.cl'],
   CALENDARIO: 'Intranet · Pisquera de Chile'
 };
 
@@ -32,11 +32,34 @@ const ESQUEMA = {
  * ===================================================================*/
 function doGet() {
   const t = HtmlService.createTemplateFromFile('Index');
+  let ssoUser = null;
+  let ssoToken = null;
+  let ssoError = null;
+  let activeEmail = '';
+
+  try {
+    activeEmail = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+    if (activeEmail) {
+      const u = ssoPerfil_(activeEmail);
+      ssoUser = publico_(u);
+      ssoToken = abrirSesion_(ssoUser);
+      guardar_('Usuarios', { id: u.id, ultimoAcceso: ahora_() });
+      log_(activeEmail, 'login sso', '');
+    }
+  } catch (e) {
+    ssoError = e.message;
+  }
+
   t.cfg = JSON.stringify({
     nombre: APP.NOMBRE,
     logo: APP.LOGO_URL || include('LogoCompleto').trim(),
     demo: APP.MODO_DEMO,
-    registro: APP.REGISTRO_ABIERTO
+    registro: APP.REGISTRO_ABIERTO,
+    dominios: APP.DOMINIOS_REGISTRO,
+    ssoEmail: activeEmail,
+    ssoUser: ssoUser,
+    ssoToken: ssoToken,
+    ssoError: ssoError
   });
   return t.evaluate()
     .setTitle(APP.NOMBRE)
@@ -100,12 +123,11 @@ function sembrar_(ss) {
   const shU = ss.getSheetByName('Usuarios');
   if (shU.getLastRow() < 2) {
     const usuarios = [
-      ['admin@demo.cl',  'Administrador',  'TI',         'admin',  'Admin2026!'],
-      ['editor@demo.cl', 'Editor Técnico', 'Mantención', 'editor', 'Editor2026!'],
-      ['lector@demo.cl', 'Operador Demo',  'Envasado',   'lector', 'Lector2026!']
+      ['admin@demo.cl',  'Administrador',  'TI',         'admin'],
+      ['editor@demo.cl', 'Editor Técnico', 'Mantención', 'editor'],
+      ['lector@demo.cl', 'Operador Demo',  'Envasado',   'lector']
     ].map(function (u, i) {
-      const salt = Utilities.getUuid();
-      return ['USR-00' + (i + 1), u[0], u[1], u[2], u[3], salt, hash_(u[4], salt), 'SI', ahora_(), ''];
+      return ['USR-00' + (i + 1), u[0], u[1], u[2], u[3], '', '', 'SI', ahora_(), ''];
     });
     shU.getRange(2, 1, usuarios.length, usuarios[0].length).setValues(usuarios);
   }
@@ -174,27 +196,19 @@ function sembrar_(ss) {
 /* =====================================================================
  * AUTENTICACIÓN Y SESIONES
  * ===================================================================*/
-function login(email, password) {
+function login(email) {
   try {
     email = String(email || '').trim().toLowerCase();
-    password = String(password || '');
-    if (!email || !password) throw new Error('Ingresa tu correo y contraseña.');
+    if (!email) throw new Error('Ingresa tu correo corporativo.');
 
     const cache = CacheService.getScriptCache();
     const kf = 'f_' + email;
     const fallos = Number(cache.get(kf) || 0);
     if (fallos >= APP.MAX_INTENTOS) {
-      throw new Error('Demasiados intentos fallidos. Espera ' + APP.BLOQUEO_MIN + ' minutos.');
+      throw new Error('Demasiados intentos. Espera ' + APP.BLOQUEO_MIN + ' minutos.');
     }
 
-    const u = leer_('Usuarios').find(function (x) { return x.email.toLowerCase() === email; });
-    if (!u || hash_(password, u.salt) !== u.hash) {
-      cache.put(kf, String(fallos + 1), APP.BLOQUEO_MIN * 60);
-      log_(email, 'login fallido', '');
-      throw new Error('Correo o contraseña incorrectos.');
-    }
-    if (u.activo !== 'SI') throw new Error('Tu cuenta está desactivada. Contacta al administrador.');
-
+    const u = ssoPerfil_(email);
     cache.remove(kf);
     const usuario = publico_(u);
     const token = abrirSesion_(usuario);
@@ -204,6 +218,56 @@ function login(email, password) {
   } catch (e) {
     return JSON.stringify({ ok: false, error: e.message });
   }
+}
+
+function ssoPerfil_(email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email || email.indexOf('@') < 0) throw new Error('Ingresa un correo electrónico válido.');
+  validarDominio_(email);
+  let u = leer_('Usuarios').find(function (x) { return x.email.toLowerCase() === email; });
+  if (!u) {
+    if (!APP.REGISTRO_ABIERTO) {
+      throw new Error('La cuenta ' + email + ' no está registrada. Solicita acceso a un administrador.');
+    }
+    const nombre = formatearNombreEmail_(email);
+    u = {
+      id: 'USR-' + Date.now().toString(36).toUpperCase(),
+      email: email,
+      nombre: nombre,
+      area: '',
+      rol: 'lector',
+      salt: '',
+      hash: '',
+      activo: 'SI',
+      creado: ahora_(),
+      ultimoAcceso: ahora_(),
+      prefs: JSON.stringify(PREFS_DEFECTO)
+    };
+    guardar_('Usuarios', u);
+    log_(email, 'registro sso', 'cuenta creada automáticamente (lector)');
+  }
+  if (u.activo !== 'SI') throw new Error('Tu cuenta está desactivada. Contacta al administrador.');
+  return u;
+}
+
+function validarDominio_(email) {
+  const permitidos = (APP.DOMINIOS_REGISTRO || []).map(function (d) { return d.toLowerCase(); });
+  if (APP.MODO_DEMO && permitidos.indexOf('demo.cl') < 0) {
+    permitidos.push('demo.cl');
+  }
+  if (permitidos.length === 0) return;
+  const partes = email.split('@');
+  const dom = partes.length > 1 ? partes[1].toLowerCase() : '';
+  if (permitidos.indexOf(dom) < 0) {
+    throw new Error('Dominio no autorizado (@' + dom + '). Usa tu cuenta corporativa.');
+  }
+}
+
+function formatearNombreEmail_(email) {
+  const usuario = email.split('@')[0];
+  return usuario.split(/[\._\-]/).filter(Boolean).map(function (p) {
+    return p.charAt(0).toUpperCase() + p.slice(1);
+  }).join(' ');
 }
 
 function validarSesion(token) {
@@ -492,15 +556,8 @@ function perfil_(d, u) {
   return Object.assign(publico_(r), { creado: r.creado, ultimoAcceso: r.ultimoAcceso, prefs: prefs_(r) });
 }
 
-function cambiarPassword_(d, u) {
-  const r = buscarPorId_('Usuarios', u.id, 'Usuario no encontrado.');
-  if (hash_(String(d.actual || ''), r.salt) !== r.hash) throw new Error('La contraseña actual no es correcta.');
-  validarPassword_(d.nueva);
-  if (d.nueva === d.actual) throw new Error('La nueva contraseña debe ser distinta a la actual.');
-  const salt = Utilities.getUuid();
-  guardar_('Usuarios', { id: r.id, salt: salt, hash: hash_(d.nueva, salt) });
-  log_(u.email, 'cambio de contraseña', '');
-  return true;
+function cambiarPassword_() {
+  throw new Error('Las contraseñas son administradas centralmente por Google Workspace corporativo.');
 }
 
 function usuarios_() {
@@ -516,16 +573,15 @@ function guardarUsuario_(d, u) {
 
   if (!d.id) {
     const email = String(d.email || '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Correo no válido.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Correo corporativo no válido.');
+    validarDominio_(email);
     if (leer_('Usuarios').some(function (x) { return x.email.toLowerCase() === email; })) {
       throw new Error('Ya existe un usuario con ese correo.');
     }
-    validarPassword_(d.password);
-    const salt = Utilities.getUuid();
     guardar_('Usuarios', {
       id: 'USR-' + Date.now().toString(36).toUpperCase(),
       email: email, nombre: nombre, area: area, rol: d.rol,
-      salt: salt, hash: hash_(d.password, salt),
+      salt: '', hash: '',
       activo: 'SI', creado: ahora_(), ultimoAcceso: ''
     });
     log_(u.email, 'crear usuario', email + ' (' + d.rol + ')');
@@ -538,19 +594,13 @@ function guardarUsuario_(d, u) {
     throw new Error('No puedes quitarte el rol de administrador ni desactivar tu propia cuenta.');
   }
   guardar_('Usuarios', { id: t.id, nombre: nombre, area: area, rol: d.rol, activo: activo });
-  if (t.id !== u.id) cerrarSesionesDe_(t.id); // aplica cambios de rol/estado de inmediato
+  if (t.id !== u.id) cerrarSesionesDe_(t.id);
   log_(u.email, 'editar usuario', t.email + ' → ' + d.rol + ' / ' + activo);
   return true;
 }
 
-function resetPassword_(d, u) {
-  const t = buscarPorId_('Usuarios', d.id, 'Usuario no encontrado.');
-  validarPassword_(d.password);
-  const salt = Utilities.getUuid();
-  guardar_('Usuarios', { id: t.id, salt: salt, hash: hash_(d.password, salt) });
-  cerrarSesionesDe_(t.id);
-  log_(u.email, 'restablecer contraseña', t.email);
-  return true;
+function resetPassword_() {
+  throw new Error('Las credenciales se gestionan a través de Google Workspace corporativo.');
 }
 
 function registro_() {
@@ -682,12 +732,8 @@ function registrarse(d) {
     const nombre = txt_(d.nombre, 80, true, 'nombre');
     const area = txt_(d.area, 60);
     const email = String(d.email || '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Correo no válido.');
-    if (APP.DOMINIOS_REGISTRO.length && APP.DOMINIOS_REGISTRO.indexOf(email.split('@')[1]) === -1) {
-      throw new Error('Usa tu correo de la empresa (' + APP.DOMINIOS_REGISTRO.map(function (x) { return '@' + x; }).join(', ') + ').');
-    }
-    validarPassword_(d.password);
-    if (String(d.password) !== String(d.confirmar || '')) throw new Error('Las contraseñas no coinciden.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Correo corporativo no válido.');
+    validarDominio_(email);
 
     const cache = CacheService.getScriptCache();
     const intentos = Number(cache.get('reg_' + email) || 0);
@@ -697,11 +743,10 @@ function registrarse(d) {
     if (leer_('Usuarios').some(function (x) { return x.email.toLowerCase() === email; })) {
       throw new Error('Ya existe una cuenta con ese correo. Inicia sesión.');
     }
-    const salt = Utilities.getUuid();
     const nuevo = {
       id: 'USR-' + Date.now().toString(36).toUpperCase(),
       email: email, nombre: nombre, area: area, rol: 'lector',
-      salt: salt, hash: hash_(String(d.password), salt),
+      salt: '', hash: '',
       activo: 'SI', creado: ahora_(), ultimoAcceso: ahora_(), prefs: JSON.stringify(PREFS_DEFECTO)
     };
     guardar_('Usuarios', nuevo);

@@ -123,6 +123,16 @@ function mostrarLogin(msg) {
   const m = $('#loginMsg');
   m.textContent = msg || '';
   m.classList.toggle('hidden', !msg);
+
+  if (CFG.ssoEmail) {
+    const p = $('#ssoPrompt');
+    if (p) {
+      p.classList.remove('hidden');
+      $('#ssoEmailLabel').textContent = CFG.ssoEmail;
+      $('#loginForm').email.value = CFG.ssoEmail;
+    }
+  }
+
   mostrarTab('login');
 }
 
@@ -134,25 +144,24 @@ function mostrarTab(cual) {
   $('#registroForm').classList.toggle('hidden', !reg);
   $('#loginErr').textContent = ''; $('#registroErr').textContent = '';
   const f = reg ? $('#registroForm') : $('#loginForm');
-  setTimeout(() => { const i = [...f.querySelectorAll('input')].find(x => !x.value) || f.querySelector('input'); i.focus(); }, 50);
+  setTimeout(() => { const i = [...f.querySelectorAll('input')].find(x => !x.value) || f.querySelector('input'); if (i) i.focus(); }, 50);
 }
 
 async function onRegistro(ev) {
   ev.preventDefault();
   const f = ev.target, btn = $('button[type=submit]', f), err = $('#registroErr');
   err.textContent = '';
-  if (!f.nombre.value.trim() || !f.email.value.trim() || !f.password.value) { err.textContent = 'Completa nombre, correo y contraseña.'; return; }
-  if (f.password.value !== f.confirmar.value) { err.textContent = 'Las contraseñas no coinciden.'; f.confirmar.focus(); return; }
-  btn.disabled = true; btn.textContent = 'Creando cuenta…';
+  if (!f.nombre.value.trim() || !f.email.value.trim()) { err.textContent = 'Completa tu nombre y correo corporativo.'; return; }
+  btn.disabled = true; btn.textContent = 'Registrando…';
   try {
-    const o = await run('registrarse', Object.fromEntries(new FormData(f)));
+    const o = await run('registrarse', { nombre: f.nombre.value, email: f.email.value, area: f.area.value });
     f.reset();
     entrar(o.token, o.usuario);
-    toast('¡Cuenta creada! Bienvenido a la intranet.');
+    toast('¡Cuenta registrada! Bienvenido a la intranet.');
   } catch (e) {
     err.textContent = e.message;
   } finally {
-    btn.disabled = false; btn.textContent = 'Crear cuenta';
+    btn.disabled = false; btn.textContent = 'Registrar cuenta';
   }
 }
 
@@ -186,15 +195,30 @@ async function onLogin(ev) {
   const f = ev.target, btn = $('button[type=submit]', f), err = $('#loginErr');
   err.textContent = '';
   $('#loginMsg').classList.add('hidden');
-  btn.disabled = true; btn.textContent = 'Ingresando…';
+  btn.disabled = true; btn.textContent = 'Verificando cuenta…';
   try {
-    const o = await run('login', f.email.value, f.password.value);
+    const o = await run('login', f.email.value);
     f.reset();
     entrar(o.token, o.usuario);
   } catch (e) {
     err.textContent = e.message;
   } finally {
-    btn.disabled = false; btn.textContent = 'Ingresar';
+    btn.disabled = false; btn.textContent = 'Ingresar con Google SSO';
+  }
+}
+
+async function onSsoDirecto() {
+  if (!CFG.ssoEmail) return;
+  const btn = $('#btnSsoDirecto'), err = $('#loginErr');
+  err.textContent = '';
+  btn.disabled = true;
+  try {
+    const o = await run('login', CFG.ssoEmail);
+    entrar(o.token, o.usuario);
+  } catch (e) {
+    err.textContent = e.message;
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -579,9 +603,9 @@ const VIEWS = {
   async perfil() {
     const u = await call('perfil');
     const permisos = {
-      lector: ['Consultar máquinas, guías publicadas y documentos', 'Agendar reuniones y gestionar tus tareas', 'Cambiar tu contraseña'],
+      lector: ['Consultar máquinas, guías publicadas y documentos', 'Agendar reuniones y gestionar tus tareas', 'Autenticación con Google Workspace'],
       editor: ['Todo lo del lector', 'Crear y editar máquinas, guías y documentos', 'Ver guías en borrador y en revisión'],
-      admin: ['Todo lo del editor', 'Eliminar registros', 'Crear usuarios, asignar roles y restablecer contraseñas']
+      admin: ['Todo lo del editor', 'Eliminar registros', 'Crear usuarios y gestionar roles']
     }[u.rol] || [];
     return {
       html: head('Mi cuenta', 'Mi Perfil', 'Tus datos, área y preferencias de cuenta.') + `
@@ -601,15 +625,12 @@ const VIEWS = {
           </div>
           <div style="display:grid;gap:24px">
           <div class="card pad">
-            <h2>${ic('lock')} Cambiar contraseña</h2>
-            <p class="muted">Usa al menos 8 caracteres, con letras y números.</p>
-            <form id="fPass" class="form" style="gap:16px">
-              <label class="fld"><span>Contraseña actual</span><input name="actual" type="password" required autocomplete="current-password"></label>
-              <label class="fld"><span>Nueva contraseña</span><input name="nueva" type="password" required minlength="8" autocomplete="new-password"></label>
-              <label class="fld"><span>Repite la nueva contraseña</span><input name="repite" type="password" required minlength="8" autocomplete="new-password"></label>
-              <div class="form-err" id="pErr"></div>
-              <div><button class="btn btn-primary" type="submit">Actualizar contraseña</button></div>
-            </form>
+            <h2>${ic('lock')} Seguridad y Acceso</h2>
+            <p class="muted">Sesión iniciada mediante Single Sign-On (SSO) de Google Workspace.</p>
+            <div class="notice-sm" style="margin-top:14px">
+              <b>Cuenta corporativa vinculada:</b> ${esc(u.email)}<br>
+              <span class="muted sm">Las contraseñas y las políticas de 2FA son administradas centralmente por TI de CCU.</span>
+            </div>
           </div>
           <div class="card pad">
             <h2>Notificaciones</h2>
@@ -633,18 +654,6 @@ const VIEWS = {
         $('#prefTar').addEventListener('click', e => {
           const b = e.currentTarget; b.setAttribute('aria-checked', String(b.getAttribute('aria-checked') !== 'true')); guardarPrefs();
         });
-        $('#fPass').addEventListener('submit', async e => {
-          e.preventDefault();
-          const f = e.target, b = $('button', f), err = $('#pErr');
-          err.textContent = '';
-          if (f.nueva.value !== f.repite.value) { err.textContent = 'Las contraseñas nuevas no coinciden.'; return; }
-          b.disabled = true;
-          try {
-            await call('cambiarPassword', { actual: f.actual.value, nueva: f.nueva.value });
-            f.reset(); toast('Contraseña actualizada');
-          } catch (x) { err.textContent = x.message; }
-          finally { b.disabled = false; }
-        });
       }
     };
   },
@@ -662,7 +671,7 @@ const VIEWS = {
           <td>${badgeRol(u.rol)}</td>
           <td><span class="dot ${u.activo === 'SI' ? 'on' : 'off'}"></span>${u.activo === 'SI' ? 'Activo' : 'Desactivado'}</td>
           <td class="muted">${esc(u.ultimoAcceso || 'Nunca')}</td>
-          <td class="row-acts">${btnIcon('editarUsuario', u.id, 'edit', 'Editar')}${btnIcon('resetPassword', u.id, 'key', 'Restablecer contraseña')}</td>
+          <td class="row-acts">${btnIcon('editarUsuario', u.id, 'edit', 'Editar')}</td>
         </tr>`).join('')}</tbody>
       </table></div>
 
@@ -1017,14 +1026,13 @@ const ACT = {
   nuevoUsuario() {
     formModal({
       titulo: 'Nuevo usuario',
-      sub: 'Entrega la contraseña temporal de forma segura; el usuario podrá cambiarla en Mi Perfil.',
+      sub: 'El usuario accederá con su cuenta corporativa de Google Workspace.',
       valores: { rol: 'lector' },
       campos: [
-        { k: 'email', label: 'Correo', type: 'email', req: true, full: true },
+        { k: 'email', label: 'Correo corporativo', type: 'email', req: true, full: true },
         { k: 'nombre', label: 'Nombre completo', req: true },
         { k: 'area', label: 'Área' },
-        { k: 'rol', label: 'Rol', type: 'select', opts: [['lector', 'Lector · solo consulta'], ['editor', 'Editor · crea y edita'], ['admin', 'Administrador · control total']], req: true },
-        { k: 'password', label: 'Contraseña temporal', type: 'password', req: true, min: 8, hint: 'Mínimo 8 caracteres, con letras y números.' }
+        { k: 'rol', label: 'Rol', type: 'select', opts: [['lector', 'Lector · solo consulta'], ['editor', 'Editor · crea y edita'], ['admin', 'Administrador · control total']], req: true }
       ],
       onSubmit: async d => { await call('guardarUsuario', d); toast('Usuario creado'); refrescar(); }
     });
@@ -1042,14 +1050,6 @@ const ACT = {
         { k: 'activo', label: 'Estado', type: 'select', opts: [['SI', 'Activo'], ['NO', 'Desactivado']] }
       ],
       onSubmit: async d => { await call('guardarUsuario', { ...d, id }); toast('Usuario actualizado'); refrescar(); }
-    });
-  },
-  resetPassword(id) {
-    const u = (S.cache.usuarios || []).find(x => x.id === id) || {};
-    formModal({
-      titulo: 'Restablecer contraseña', sub: u.email, boton: 'Restablecer',
-      campos: [{ k: 'password', label: 'Nueva contraseña temporal', type: 'password', req: true, min: 8, full: true, hint: 'Mínimo 8 caracteres, con letras y números.' }],
-      onSubmit: async d => { await call('resetPassword', { id, password: d.password }); toast('Contraseña restablecida'); }
     });
   }
 };
@@ -1108,6 +1108,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   $('#loginForm').addEventListener('submit', onLogin);
   $('#registroForm').addEventListener('submit', onRegistro);
+  const btnSso = $('#btnSsoDirecto');
+  if (btnSso) btnSso.addEventListener('click', onSsoDirecto);
   if (CFG.registro) {
     $('#accesoTabs').classList.remove('hidden');
     document.querySelector('[data-solo-registro]').classList.remove('hidden');
@@ -1124,11 +1126,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#scrim').addEventListener('click', cerrarMenu);
   if (store.get('pq_sb')) $('#app').classList.add('collapsed');
 
+  if (CFG.ssoToken && CFG.ssoUser) {
+    entrar(CFG.ssoToken, CFG.ssoUser);
+    return;
+  }
+
   const t = store.get('pq_t');
   if (t) {
     try { const o = await run('validarSesion', t); entrar(t, o.usuario); return; }
     catch (e) { store.set('pq_t', null); }
   }
-  mostrarLogin();
+  mostrarLogin(CFG.ssoError || '');
 });
 </script>
