@@ -130,6 +130,9 @@ function mostrarLogin(msg) {
   $('#ssoPrompt').classList.toggle('hidden', !sso);
   $('#ssoEmailLabel').textContent = CFG.ssoEmail || '';
   $('#ssoAusente').classList.toggle('hidden', sso || !!msg);
+  $('#cambioCuenta').classList.toggle('hidden', sso);
+  const bc = $('#btnCambiarCuenta');
+  bc.href = bc.getAttribute('href').split('?')[0] + (CFG.appUrl ? '?continue=' + encodeURIComponent(CFG.appUrl) : '');
   $('#demoBox').classList.toggle('hidden', !CFG.demo);
   $('#registroForm').email.value = CFG.ssoEmail || '';
 
@@ -1198,6 +1201,8 @@ async function iniciar() {
     try { const o = await run('validarSesion', t); entrar(t, o.usuario); return; }
     catch (e) { store.set('pq_t', null); }
   }
-  mostrarLogin(CFG.ssoError || '');
+  mostrarLogin(CFG.ssoRechazado
+    ? `Entraste con ${CFG.ssoRechazado}, que no es una cuenta ${(CFG.dominios || []).map(d => '@' + d).join(' o ')}. Cambia a tu cuenta corporativa para ingresar.`
+    : CFG.ssoError || '');
 }
 </script>
