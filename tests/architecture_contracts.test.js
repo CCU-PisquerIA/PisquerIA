@@ -91,3 +91,14 @@ test('ESQUEMA definition contains required sheets and essential columns', () => 
   assert.ok(app.ESQUEMA.Usuarios.includes('email'), 'Usuarios schema must contain email');
   assert.ok(app.ESQUEMA.Usuarios.includes('rol'), 'Usuarios schema must contain rol');
 });
+
+test('Inline client scripts do not contain "//" inside string literals (HtmlService strips them as comments)', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'App.html'), 'utf8');
+  const offenders = html.split('\n')
+    .map((line, i) => ({ line, n: i + 1 }))
+    .filter(({ line }) => /['"`][^'"`]*?(?<!\\)\/\//.test(line) && !/^\s*\/\//.test(line))
+    .map(({ line, n }) => `App.html:${n}: ${line.trim()}`);
+  assert.deepStrictEqual(offenders, [], 'Escape as "https:\\/\\/..." so Apps Script does not truncate the script:\n' + offenders.join('\n'));
+});

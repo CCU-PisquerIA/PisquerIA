@@ -60,7 +60,7 @@ function doGet() {
     ssoUser: ssoUser,
     ssoToken: ssoToken,
     ssoError: ssoError
-  });
+  }).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   return t.evaluate()
     .setTitle(APP.NOMBRE)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');

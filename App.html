@@ -801,7 +801,7 @@ async function formDocumento(valores = {}) {
       { k: 'maquinaId', label: 'Máquina', type: 'select', opts: maqs, req: true, ph: 'Selecciona una máquina' },
       { k: 'tipo', label: 'Tipo', type: 'select', opts: TIPOS_DOC, req: true },
       { k: 'version', label: 'Versión', def: '1.0' },
-      { k: 'url', label: 'Enlace al archivo', type: 'url', ph: 'https://drive.google.com/…', hint: 'Opcional. Enlace de Drive u otro sitio (https).' }
+      { k: 'url', label: 'Enlace al archivo', type: 'url', ph: 'https:\/\/drive.google.com/…', hint: 'Opcional. Enlace de Drive u otro sitio (https).' }
     ],
     onSubmit: async d => {
       await call('guardarDocumento', { ...d, id: valores.id || '' });
@@ -1088,7 +1088,14 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.matches && e.target.matches('tr[data-go]')) e.target.click();
 });
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
+  iniciar().catch(e => {
+    console.error('Error al iniciar la intranet:', e);
+    try { mostrarLogin('No se pudo iniciar la aplicación: ' + (e && e.message || e)); } catch (_) {}
+  });
+});
+
+async function iniciar() {
   $('#brand').innerHTML = marcaHTML();
   $('#loginBrand').innerHTML = marcaHTML();
   $('#sbToggle').innerHTML = ic('panel');
@@ -1137,5 +1144,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     catch (e) { store.set('pq_t', null); }
   }
   mostrarLogin(CFG.ssoError || '');
-});
+}
 </script>
