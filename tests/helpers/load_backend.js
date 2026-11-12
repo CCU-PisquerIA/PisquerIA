@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-function loadBackend() {
+function loadBackend(overrides = {}) {
   const codePath = path.resolve(__dirname, '../../Código.js');
   const code = fs.readFileSync(codePath, 'utf8');
 
@@ -51,6 +51,7 @@ function loadBackend() {
     }
   };
 
+  Object.assign(sandbox, overrides);
   vm.createContext(sandbox);
 
   // Return top-level declarations needed for verification
@@ -79,7 +80,14 @@ function loadBackend() {
   ARCHIVOS_PERMITIDOS,
   validarArchivo_,
   firmaValida_,
-  docPublico_
+  docPublico_,
+  COLUMNAS_OBSOLETAS,
+  HOJAS_CACHE,
+  migrarHoja_,
+  leer_,
+  guardar_,
+  borrar_,
+  trozos_
 });
 `;
 

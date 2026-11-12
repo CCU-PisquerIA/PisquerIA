@@ -37,13 +37,20 @@ const PRIORIDADES = ['Alta', 'Media', 'Baja'];
 const PREFS_DEFECTO = { recordatorio: 10, avisoTareas: true };
 
 const ESQUEMA = {
-  Usuarios:   ['id', 'email', 'nombre', 'area', 'rol', 'salt', 'hash', 'activo', 'creado', 'ultimoAcceso', 'prefs'],
+  Usuarios:   ['id', 'email', 'nombre', 'area', 'rol', 'activo', 'creado', 'ultimoAcceso', 'prefs'],
   Maquinas:   ['id', 'nombre', 'area', 'clase', 'descripcion', 'ubicacion', 'fabricante', 'estado', 'actualizado'],
   Guias:      ['id', 'titulo', 'maquinaId', 'version', 'estado', 'resumen', 'contenido', 'autor', 'actualizado'],
   Documentos: ['id', 'titulo', 'maquinaId', 'tipo', 'url', 'version', 'actualizado', 'fileId', 'nombreArchivo', 'mimeType', 'tamano', 'autor'],
   Tareas:     ['id', 'titulo', 'descripcion', 'estado', 'prioridad', 'vence', 'asignadoA', 'creadoPor', 'creado', 'actualizado'],
   Registro:   ['fecha', 'email', 'accion', 'detalle']
 };
+
+// Columnas que ya no se usan y que inicializar() elimina de la planilla (datos sensibles heredados)
+const COLUMNAS_OBSOLETAS = { Usuarios: ['salt', 'hash'] };
+
+// Hojas cuya lectura se guarda en CacheService entre ejecuciones (Registro solo se escribe)
+const HOJAS_CACHE = ['Usuarios', 'Maquinas', 'Guias', 'Documentos', 'Tareas'];
+const CACHE_HOJA_SEG = 10 * 60; // cambios hechos a mano en la planilla se ven en máx. 10 min
 
 /* =====================================================================
  * WEB APP
@@ -110,15 +117,9 @@ function inicializar() {
         .setFontWeight('bold').setBackground('#0B1F44').setFontColor('#ffffff');
       sh.setFrozenRows(1);
     } else {
-      // Migración: agrega al final las columnas nuevas que falten (no borra datos)
-      const actuales = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
-      cols.forEach(function (c, i) {
-        if (actuales.indexOf(c) === -1) {
-          sh.getRange(1, i + 1).setValue(c).setFontWeight('bold').setBackground('#0B1F44').setFontColor('#ffffff');
-          sh.getRange(2, i + 1, sh.getMaxRows() - 1, 1).setNumberFormat('@');
-        }
-      });
+      migrarHoja_(sh, nombre);
     }
+    invalidarHoja_(nombre);
   });
 
   let cal = props.getProperty('CAL_ID') && CalendarApp.getCalendarById(props.getProperty('CAL_ID'));
@@ -144,9 +145,33 @@ function inicializar() {
   });
 
   sembrar_(ss);
+  Object.keys(ESQUEMA).forEach(invalidarHoja_);
   Logger.log('Base de datos lista: ' + ss.getUrl());
   Logger.log('Calendario del equipo: ' + cal.getName());
   Logger.log('Carpeta de documentos: ' + carpeta.getUrl());
+}
+
+// Migración por nombre de columna: elimina las obsoletas y agrega al final las que falten.
+// No depende del orden de la hoja, así que no puede pisar columnas existentes.
+function migrarHoja_(sh, nombre) {
+  const cabecera = function () { return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String); };
+  const obsoletas = COLUMNAS_OBSOLETAS[nombre] || [];
+  const eliminadas = [];
+  for (let i = cabecera().length - 1; i >= 0; i--) {
+    const c = cabecera()[i];
+    if (obsoletas.indexOf(c) >= 0) { sh.deleteColumn(i + 1); eliminadas.push(c); }
+  }
+  const agregadas = [];
+  ESQUEMA[nombre].forEach(function (c) {
+    if (cabecera().indexOf(c) >= 0) return;
+    const col = sh.getLastColumn() + 1;
+    sh.getRange(1, col).setValue(c).setFontWeight('bold').setBackground('#0B1F44').setFontColor('#ffffff');
+    if (sh.getMaxRows() > 1) sh.getRange(2, col, sh.getMaxRows() - 1, 1).setNumberFormat('@');
+    agregadas.push(c);
+  });
+  if (eliminadas.length) Logger.log(nombre + ': columnas eliminadas → ' + eliminadas.join(', '));
+  if (agregadas.length) Logger.log(nombre + ': columnas agregadas → ' + agregadas.join(', '));
+  return { eliminadas: eliminadas, agregadas: agregadas };
 }
 
 function sembrar_(ss) {
@@ -159,7 +184,7 @@ function sembrar_(ss) {
       ['editor@demo.cl', 'Editor Técnico', 'Mantención', 'editor'],
       ['lector@demo.cl', 'Operador Demo',  'Envasado',   'lector']
     ].map(function (u, i) {
-      return ['USR-00' + (i + 1), u[0], u[1], u[2], u[3], '', '', 'SI', ahora_(), ''];
+      return ['USR-00' + (i + 1), u[0], u[1], u[2], u[3], 'SI', ahora_(), ''];
     });
     shU.getRange(2, 1, usuarios.length, usuarios[0].length).setValues(usuarios);
   }
@@ -268,8 +293,6 @@ function ssoPerfil_(email) {
       nombre: nombre,
       area: '',
       rol: 'lector',
-      salt: '',
-      hash: '',
       activo: 'SI',
       creado: ahora_(),
       ultimoAcceso: ahora_(),
@@ -350,14 +373,6 @@ function cerrarSesionesDe_(idUsuario) {
   cache.remove('u_' + idUsuario);
 }
 
-function hash_(password, salt) {
-  let h = salt + '|' + password;
-  for (let i = 0; i < 150; i++) {
-    const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, h + salt, Utilities.Charset.UTF_8);
-    h = bytes.map(function (b) { return ((b + 256) % 256).toString(16).padStart(2, '0'); }).join('');
-  }
-  return h;
-}
 
 function publico_(u) {
   return { id: u.id, email: u.email, nombre: u.nombre, area: u.area, rol: u.rol };
@@ -380,10 +395,8 @@ const ACCIONES = {
   guardarDocumento:  ['editor', guardarDocumento_],
   eliminarDocumento: ['admin',  eliminarDocumento_],
   perfil:            ['lector', perfil_],
-  cambiarPassword:   ['lector', cambiarPassword_],
   usuarios:          ['admin',  usuarios_],
   guardarUsuario:    ['admin',  guardarUsuario_],
-  resetPassword:     ['admin',  resetPassword_],
   registro:          ['admin',  registro_],
   personas:          ['lector', personas_],
   tareas:            ['lector', tareas_],
@@ -687,9 +700,6 @@ function perfil_(d, u) {
   return Object.assign(publico_(r), { creado: r.creado, ultimoAcceso: r.ultimoAcceso, prefs: prefs_(r) });
 }
 
-function cambiarPassword_() {
-  throw new Error('Las contraseñas son administradas centralmente por Google Workspace corporativo.');
-}
 
 function usuarios_() {
   return leer_('Usuarios').map(function (r) {
@@ -712,7 +722,6 @@ function guardarUsuario_(d, u) {
     guardar_('Usuarios', {
       id: 'USR-' + Date.now().toString(36).toUpperCase(),
       email: email, nombre: nombre, area: area, rol: d.rol,
-      salt: '', hash: '',
       activo: 'SI', creado: ahora_(), ultimoAcceso: ''
     });
     log_(u.email, 'crear usuario', email + ' (' + d.rol + ')');
@@ -730,20 +739,11 @@ function guardarUsuario_(d, u) {
   return true;
 }
 
-function resetPassword_() {
-  throw new Error('Las credenciales se gestionan a través de Google Workspace corporativo.');
-}
 
 function registro_() {
   return leer_('Registro').slice(-60).reverse();
 }
 
-function validarPassword_(p) {
-  p = String(p || '');
-  if (p.length < 8 || !/[A-Za-z]/.test(p) || !/\d/.test(p)) {
-    throw new Error('La contraseña debe tener al menos 8 caracteres, con letras y números.');
-  }
-}
 
 /* =====================================================================
  * ACCESO A DATOS
@@ -760,18 +760,27 @@ function db_() {
 }
 
 function leer_(hoja) {
-  if (!_memo[hoja]) {
-    const v = db_().getSheetByName(hoja).getDataRange().getValues();
-    const cab = v.shift().map(String);
-    _memo[hoja] = v.filter(function (r) { return r[0] !== ''; }).map(function (r) {
-      const o = {};
-      cab.forEach(function (k, i) {
-        o[k] = r[i] instanceof Date ? Utilities.formatDate(r[i], APP.ZONA, 'yyyy-MM-dd') : String(r[i]);
-      });
-      return o;
-    });
-  }
+  if (!_memo[hoja]) _memo[hoja] = leerCache_(hoja) || leerHoja_(hoja);
   return _memo[hoja].map(function (o) { return Object.assign({}, o); });
+}
+
+// Lee la hoja por nombre de columna y devuelve solo las columnas del ESQUEMA (todo como texto)
+function leerHoja_(hoja) {
+  const version = versionHoja_(hoja); // se toma antes de leer, para no cachear datos más nuevos con una versión vieja
+  const v = db_().getSheetByName(hoja).getDataRange().getValues();
+  const cab = v.shift().map(String);
+  const cols = ESQUEMA[hoja];
+  const pos = cols.map(function (c) { return cab.indexOf(c); });
+  const filas = v.filter(function (r) { return r[0] !== ''; }).map(function (r) {
+    const o = {};
+    cols.forEach(function (k, i) {
+      const x = pos[i] < 0 ? '' : r[pos[i]];
+      o[k] = x instanceof Date ? Utilities.formatDate(x, APP.ZONA, 'yyyy-MM-dd') : String(x);
+    });
+    return o;
+  });
+  guardarCache_(hoja, version, filas);
+  return filas;
 }
 
 function buscarPorId_(hoja, id, msg) {
@@ -780,22 +789,33 @@ function buscarPorId_(hoja, id, msg) {
   return r;
 }
 
+// Inserta o actualiza por id. Escribe por nombre de columna: el orden de la hoja no importa
+// y las columnas que no están en el ESQUEMA se dejan intactas.
 function guardar_(hoja, obj) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
     const sh = db_().getSheetByName(hoja);
     const cols = ESQUEMA[hoja];
+    const cab = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+    const faltan = cols.filter(function (c) { return obj[c] !== undefined && cab.indexOf(c) < 0; });
+    if (faltan.length) {
+      throw new Error('La hoja ' + hoja + ' no tiene las columnas ' + faltan.join(', ') + '. Ejecuta inicializar() en el editor.');
+    }
+    const valor = function (c, actual) {
+      return cols.indexOf(c) >= 0 && obj[c] !== undefined ? seguro_(obj[c]) : actual;
+    };
     const ids = sh.getRange(1, 1, sh.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); });
     const idx = ids.indexOf(String(obj.id));
     if (idx > 0) {
-      const rango = sh.getRange(idx + 1, 1, 1, cols.length);
+      const rango = sh.getRange(idx + 1, 1, 1, cab.length);
       const actual = rango.getValues()[0];
-      rango.setValues([cols.map(function (c, i) { return obj[c] !== undefined ? seguro_(obj[c]) : actual[i]; })]);
+      rango.setValues([cab.map(function (c, i) { return valor(c, actual[i]); })]);
     } else {
-      sh.appendRow(cols.map(function (c) { return obj[c] !== undefined ? seguro_(obj[c]) : ''; }));
+      sh.appendRow(cab.map(function (c) { return valor(c, ''); }));
     }
-    delete _memo[hoja];
+    SpreadsheetApp.flush();
+    invalidarHoja_(hoja);
   } finally {
     lock.releaseLock();
   }
@@ -810,10 +830,86 @@ function borrar_(hoja, id) {
     const idx = ids.indexOf(String(id));
     if (idx < 1) throw new Error('Registro no encontrado.');
     sh.deleteRow(idx + 1);
-    delete _memo[hoja];
+    SpreadsheetApp.flush();
+    invalidarHoja_(hoja);
   } finally {
     lock.releaseLock();
   }
+}
+
+/* ---------- Caché de lecturas entre ejecuciones ----------
+ * Cada hoja tiene una versión en CacheService. Escribir cambia la versión, así que las
+ * lecturas cacheadas con la versión anterior dejan de usarse. Los datos se guardan en
+ * trozos porque CacheService acepta como máximo 100 KB por valor. */
+function versionHoja_(hoja) {
+  if (HOJAS_CACHE.indexOf(hoja) < 0) return null;
+  try { return CacheService.getScriptCache().get('dbv_' + hoja) || '0'; }
+  catch (e) { return null; }
+}
+
+function claveCache_(hoja, version) {
+  return 'db_' + hoja + '_' + version;
+}
+
+function leerCache_(hoja) {
+  const version = versionHoja_(hoja);
+  if (version === null) return null;
+  try {
+    const cache = CacheService.getScriptCache();
+    const base = claveCache_(hoja, version);
+    const n = Number(cache.get(base + '_n') || 0);
+    if (!n) return null;
+    const claves = [];
+    for (let i = 0; i < n; i++) claves.push(base + '_' + i);
+    const partes = cache.getAll(claves);
+    let json = '';
+    for (let i = 0; i < n; i++) {
+      if (partes[claves[i]] == null) return null;
+      json += partes[claves[i]];
+    }
+    return JSON.parse(json);
+  } catch (e) {
+    return null;
+  }
+}
+
+function trozos_(texto, largo) {
+  const out = [];
+  let i = 0;
+  while (i < texto.length) {
+    let fin = Math.min(i + largo, texto.length);
+    const c = texto.charCodeAt(fin - 1);
+    if (fin < texto.length && c >= 0xD800 && c <= 0xDBFF) fin--; // no partir un emoji en dos
+    out.push(texto.slice(i, fin));
+    i = fin;
+  }
+  return out.length ? out : [''];
+}
+
+function guardarCache_(hoja, version, filas) {
+  if (version === null) return;
+  try {
+    // 30.000 caracteres ≤ 90 KB aun si todos ocupan 3 bytes en UTF-8
+    const partes = trozos_(JSON.stringify(filas), 30000);
+    if (partes.length > 30) return; // hoja muy grande: no vale la pena cachearla
+    const cache = CacheService.getScriptCache();
+    const base = claveCache_(hoja, version);
+    const valores = {};
+    partes.forEach(function (p, i) { valores[base + '_' + i] = p; });
+    cache.putAll(valores, CACHE_HOJA_SEG);
+    cache.put(base + '_n', String(partes.length), CACHE_HOJA_SEG); // al final: nunca se lee un caché a medias
+  } catch (e) { /* el caché es opcional */ }
+}
+
+function invalidarHoja_(hoja) {
+  delete _memo[hoja];
+  if (HOJAS_CACHE.indexOf(hoja) < 0) return;
+  try {
+    const cache = CacheService.getScriptCache();
+    const anterior = cache.get('dbv_' + hoja) || '0';
+    cache.remove(claveCache_(hoja, anterior) + '_n');
+    cache.put('dbv_' + hoja, Utilities.getUuid(), 21600);
+  } catch (e) { /* si falla, el caché expira solo en CACHE_HOJA_SEG */ }
 }
 
 function siguienteId_(hoja, prefijo) {
@@ -877,7 +973,6 @@ function registrarse(d) {
     const nuevo = {
       id: 'USR-' + Date.now().toString(36).toUpperCase(),
       email: email, nombre: nombre, area: area, rol: 'lector',
-      salt: '', hash: '',
       activo: 'SI', creado: ahora_(), ultimoAcceso: ahora_(), prefs: JSON.stringify(PREFS_DEFECTO)
     };
     guardar_('Usuarios', nuevo);
