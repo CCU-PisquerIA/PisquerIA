@@ -671,29 +671,55 @@ const VIEWS = {
   },
 
   async usuarios() {
-    const [lista, reg] = await Promise.all([call('usuarios'), call('registro')]);
-    S.cache.usuarios = lista;
+    S.cache.usuarios = await call('usuarios');
     return head('Administración', 'Usuarios y accesos', 'Crea cuentas, asigna roles y controla quién puede ingresar.',
-      `<button class="btn btn-primary" data-act="nuevoUsuario">${ic('plus', 18)} Nuevo usuario</button>`) + `
-      <div class="card table-wrap"><table class="tbl">
-        <thead><tr><th>Usuario</th><th>Área</th><th>Rol</th><th>Estado</th><th>Último acceso</th><th></th></tr></thead>
-        <tbody>${lista.map(u => `<tr>
-          <td><b>${esc(u.nombre)}</b>${u.id === S.user.id ? ' <span class="muted sm">(tú)</span>' : ''}<br><span class="muted sm">${esc(u.email)}</span></td>
-          <td>${esc(u.area || '—')}</td>
-          <td>${badgeRol(u.rol)}</td>
-          <td><span class="dot ${u.activo === 'SI' ? 'on' : 'off'}"></span>${u.activo === 'SI' ? 'Activo' : 'Desactivado'}</td>
-          <td class="muted">${esc(u.ultimoAcceso || 'Nunca')}</td>
-          <td class="row-acts">${btnIcon('editarUsuario', u.id, 'edit', 'Editar')}</td>
-        </tr>`).join('')}</tbody>
-      </table></div>
-
-      <div class="sec-head"><h2>Actividad reciente</h2></div>
-      ${reg.length ? `<div class="card table-wrap"><table class="tbl">
-        <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>
-        <tbody>${reg.map(r => `<tr><td class="muted">${esc(r.fecha)}</td><td>${esc(r.email)}</td><td>${esc(r.accion)}</td><td class="muted">${esc(r.detalle)}</td></tr>`).join('')}</tbody>
-      </table></div>` : vacio('Sin actividad registrada.')}`;
+      `<button class="btn btn-primary" data-act="nuevoUsuario">${ic('plus', 18)} Nuevo usuario</button>`) +
+      `<div id="uLista">${tablaUsuarios()}</div>`;
   }
 };
+
+/* ---------- Usuarios paginados ---------- */
+const POR_PAGINA = 10;
+
+// Números de página a mostrar: siempre la primera y la última, y las vecinas de la actual
+function paginas(total, actual) {
+  const out = [];
+  for (let p = 1; p <= total; p++) {
+    if (p === 1 || p === total || Math.abs(p - actual) <= 1) out.push(p);
+    else if (out[out.length - 1] !== '…') out.push('…');
+  }
+  return out;
+}
+
+function tablaUsuarios() {
+  const lista = S.cache.usuarios || [];
+  if (!lista.length) return vacio('No hay usuarios registrados.');
+  const total = Math.ceil(lista.length / POR_PAGINA);
+  const pag = S.pagUsuarios = Math.min(Math.max(1, S.pagUsuarios || 1), total);
+  const desde = (pag - 1) * POR_PAGINA;
+  const visibles = lista.slice(desde, desde + POR_PAGINA);
+  const pager = total > 1 ? `<nav class="pager" aria-label="Páginas de usuarios">
+      <span class="pager-info">Mostrando ${desde + 1}–${desde + visibles.length} de ${lista.length} usuarios</span>
+      <div class="pager-btns">
+        <button class="btn btn-sm" data-act="pagUsuarios" data-id="${pag - 1}" ${pag === 1 ? 'disabled' : ''} aria-label="Página anterior">${ic('back', 16)}</button>
+        ${paginas(total, pag).map(p => p === '…'
+          ? '<span class="pager-gap">…</span>'
+          : `<button class="btn btn-sm" data-act="pagUsuarios" data-id="${p}" ${p === pag ? 'aria-current="page"' : ''}>${p}</button>`).join('')}
+        <button class="btn btn-sm" data-act="pagUsuarios" data-id="${pag + 1}" ${pag === total ? 'disabled' : ''} aria-label="Página siguiente">${ic('next', 16)}</button>
+      </div>
+    </nav>` : '';
+  return `<div class="card table-wrap"><table class="tbl">
+      <thead><tr><th>Usuario</th><th>Área</th><th>Rol</th><th>Estado</th><th>Último acceso</th><th></th></tr></thead>
+      <tbody>${visibles.map(u => `<tr>
+        <td><b>${esc(u.nombre)}</b>${u.id === S.user.id ? ' <span class="muted sm">(tú)</span>' : ''}<br><span class="muted sm">${esc(u.email)}</span></td>
+        <td>${esc(u.area || '—')}</td>
+        <td>${badgeRol(u.rol)}</td>
+        <td><span class="dot ${u.activo === 'SI' ? 'on' : 'off'}"></span>${u.activo === 'SI' ? 'Activo' : 'Desactivado'}</td>
+        <td class="muted">${esc(u.ultimoAcceso || 'Nunca')}</td>
+        <td class="row-acts">${btnIcon('editarUsuario', u.id, 'edit', 'Editar')}</td>
+      </tr>`).join('')}</tbody>
+    </table>${pager}</div>`;
+}
 
 /* ---------- Modales y formularios ---------- */
 function abrirModal(html, clase = '') {
@@ -1083,6 +1109,11 @@ const ACT = {
   async eliminarDocumento(id) {
     if (!await confirmar('Eliminar documento', `Se eliminará el documento ${id}. Esta acción no se puede deshacer.`)) return;
     await call('eliminarDocumento', { id }); toast('Documento eliminado'); refrescar();
+  },
+  pagUsuarios(p) {
+    S.pagUsuarios = Number(p) || 1;
+    $('#uLista').innerHTML = tablaUsuarios();
+    $('#uLista').scrollIntoView({ block: 'start', behavior: 'smooth' });
   },
   nuevoUsuario() {
     formModal({

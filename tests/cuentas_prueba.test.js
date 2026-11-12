@@ -49,5 +49,5 @@ test('each documented test account logs in with its role and respects its permis
   assert.strictEqual(puede('editor', 'usuarios'), false);
   // admin: control total
   assert.strictEqual(puede('admin', 'usuarios'), true);
-  assert.strictEqual(puede('admin', 'registro'), true);
+  assert.strictEqual(puede('admin', 'guardarUsuario', { email: 'x@demo.cl', nombre: 'X', rol: 'lector' }), true);
 });
