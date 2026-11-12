@@ -99,3 +99,38 @@ test('registrarse uses the verified Google account, not the email sent by the br
   const sinSesion = backend('').app;
   assert.match(r(sinSesion.registrarse({ nombre: 'X' })).error, /No detectamos tu cuenta corporativa/);
 });
+
+// Ejecuta doGet con una sesión de Google simulada y devuelve el CFG que recibe el navegador
+function cfgDoGet(correoGoogle) {
+  const { s } = backend(correoGoogle);
+  let plantilla;
+  s.overrides.HtmlService = {
+    createTemplateFromFile: () => (plantilla = { evaluate: () => ({ setTitle: () => ({ addMetaTag: () => {} }) }) }),
+    createHtmlOutputFromFile: () => ({ getContent: () => '' })
+  };
+  s.overrides.ScriptApp = { getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/ABC/exec' }) };
+  loadBackend(s.overrides).exports.doGet();
+  return JSON.parse(plantilla.cfg);
+}
+
+test('doGet reports a rejected Google account so the user can switch accounts', () => {
+  const cfg = cfgDoGet('persona@gmail.com');
+  assert.strictEqual(cfg.ssoRechazado, 'persona@gmail.com');
+  assert.strictEqual(cfg.ssoEmail, '');
+  assert.strictEqual(cfg.ssoToken, null);
+  assert.match(cfg.ssoError, /Dominio no autorizado/);
+  assert.strictEqual(cfg.appUrl, 'https://script.google.com/macros/s/ABC/exec');
+});
+
+test('doGet logs in an accepted @ccu.cl account without offering to switch', () => {
+  const cfg = cfgDoGet('operador@ccu.cl');
+  assert.strictEqual(cfg.ssoEmail, 'operador@ccu.cl');
+  assert.strictEqual(cfg.ssoRechazado, '');
+  assert.ok(cfg.ssoToken);
+});
+
+test('doGet without a detected Google session rejects nobody', () => {
+  const cfg = cfgDoGet('');
+  assert.strictEqual(cfg.ssoRechazado, '');
+  assert.strictEqual(cfg.ssoError, null);
+});

@@ -84,6 +84,8 @@ function doGet() {
     maxArchivoMb: APP.MAX_ARCHIVO_MB,
     extensiones: Object.keys(ARCHIVOS_PERMITIDOS),
     ssoEmail: ssoError ? '' : activeEmail, // solo si la cuenta fue aceptada
+    ssoRechazado: ssoError && activeEmail ? activeEmail : '', // cuenta de Google detectada pero no autorizada
+    appUrl: urlApp_(),
     ssoUser: ssoUser,
     ssoToken: ssoToken,
     ssoError: ssoError
@@ -91,6 +93,12 @@ function doGet() {
   return t.evaluate()
     .setTitle(APP.NOMBRE)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+// URL pública de la intranet, para volver a ella después de cambiar de cuenta en Google
+function urlApp_() {
+  try { return ScriptApp.getService().getUrl() || ''; }
+  catch (e) { return ''; }
 }
 
 function include(nombre) {
