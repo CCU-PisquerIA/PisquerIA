@@ -5,10 +5,6 @@
 const S = { chat: [], chatEstado: null, chatPensando: false, token: null, user: null, view: 'inicio', params: {}, cache: {}, rid: 0, cal: null, mesCache: {}, recTimers: [], avisados: new Set(), filtroTareas: 'mias', qTareas: '' };
 const RANK = { lector: 1, editor: 2, admin: 3 };
 const ROL_TXT = { admin: 'Administrador', editor: 'Editor', lector: 'Lector' };
-const AREAS = ['Envasado', 'Destilación', 'Fermentación', 'Recepción', 'Bodega', 'Utilidades'];
-const TIPOS_DOC = ['Manual de operación', 'Ficha técnica', 'Procedimiento', 'Plano', 'Registro'];
-const ESTADOS_GUIA = ['Borrador', 'En revisión', 'Publicada'];
-const ESTADOS_MAQ = ['Operativa', 'En mantención', 'Fuera de servicio'];
 const ESTADOS_TAREA = ['Pendiente', 'En curso', 'Completada'];
 const COLUMNAS = { 'Pendiente': ['#8A97AD', 'Iniciar'], 'En curso': ['#D39A32', 'Completar'], 'Completada': ['#6E8F1A', ''] };
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -64,6 +60,7 @@ const I = {
   grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
   send: '<path d="M4.5 12 20 4.5 15 20l-3.2-6.8z"/><path d="m11.8 13.2 8.2-8.7"/>',
+  filter: '<path d="M4 5h16l-6 7.5V19l-4 1.5v-8z"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>'
 };
 
@@ -110,6 +107,27 @@ const store = {
   get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
   set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (e) {} }
 };
+
+/* ---------- Listas de opciones (áreas, clases, estados, tipos) ----------
+ * Vienen del servidor (hoja Listas) y las administra el admin en "Filtros y listas". */
+async function cargarListas() {
+  if (!S.cache.listas) S.cache.listas = await call('listas');
+  return S.cache.listas;
+}
+const listaDe = k => (S.cache.listas || {})[k] || [];
+// Opciones de un filtro: las de la lista y, al final, valores antiguos que aún tengan los registros
+function opcionesFiltro(k, valores, etiqueta = v => v) {
+  const base = listaDe(k).map(o => o.nombre);
+  return [...base, ...uniq(valores).filter(v => !base.includes(v))]
+    .map(v => `<option value="${esc(v)}">${esc(etiqueta(v))}</option>`).join('');
+}
+// Opciones de un formulario ([valor, texto]); conserva el valor actual del registro aunque ya no esté en la lista
+function opcionesForm(k, actual, pre = '') {
+  const l = listaDe(k);
+  const o = l.map(x => [x.nombre, pre + x.nombre + (x.descripcion ? ' · ' + x.descripcion : '')]);
+  if (actual && !l.some(x => x.nombre === actual)) o.push([actual, pre + actual + ' (ya no está en la lista)']);
+  return o;
+}
 
 /* ---------- Sesión ---------- */
 function marcaHTML() {
@@ -243,12 +261,13 @@ const NAV = [
   { v: 'reuniones', t: 'Reuniones', i: 'cal' },
   { v: 'tareas', t: 'Tareas', i: 'tasks' },
   { v: 'perfil', t: 'Mi Perfil', i: 'user' },
-  { v: 'usuarios', t: 'Usuarios y accesos', i: 'users', rol: 'admin' }
+  { v: 'usuarios', t: 'Usuarios y accesos', i: 'users', rol: 'admin' },
+  { v: 'listas', t: 'Filtros y listas', i: 'filter', rol: 'admin' }
 ];
 
 function pintarNav() {
-  $('#nav').innerHTML = NAV.filter(n => !n.rol || can(n.rol)).map(n =>
-    (n.rol ? '<div class="nav-sep">ADMINISTRACIÓN</div>' : '') +
+  $('#nav').innerHTML = NAV.filter(n => !n.rol || can(n.rol)).map((n, i, l) =>
+    (n.rol && !(l[i - 1] || {}).rol ? '<div class="nav-sep">ADMINISTRACIÓN</div>' : '') +
     `<a class="nav-i" data-go="${n.v}" data-nav="${n.v}" title="${esc(n.t)}">${ic(n.i)}<span>${esc(n.t)}</span></a>`
   ).join('');
 }
@@ -263,7 +282,8 @@ const refrescar = () => go(S.view, S.params);
 
 async function go(view, params = {}) {
   if (!S.user) return;
-  if (!VIEWS[view] || (view === 'usuarios' && !can('admin'))) view = 'inicio';
+  const nav = NAV.find(n => n.v === view);
+  if (!VIEWS[view] || (nav && nav.rol && !can(nav.rol))) view = 'inicio';
   S.view = view; S.params = params;
   marcarNav(view); cerrarMenu();
   const id = ++S.rid, el = $('#view');
@@ -490,13 +510,13 @@ const VIEWS = {
   },
 
   async maquinas() {
-    const lista = await call('maquinas');
+    const [lista] = await Promise.all([call('maquinas'), cargarListas()]);
     const nueva = can('editor') ? `<button class="btn btn-primary" data-act="nuevaMaquina">${ic('plus', 18)} Nueva máquina</button>` : '';
     const html = head('Biblioteca técnica', 'Máquinas', 'Explora los equipos, comprende sus principios y encuentra su documentación.', nueva) + demoBanner() + `
       <div class="toolbar">
         <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar por código, nombre o descripción"></div>
-        <select id="fArea"><option value="">Todas las áreas</option>${uniq(lista.map(m => m.area)).map(a => `<option>${esc(a)}</option>`).join('')}</select>
-        <select id="fClase"><option value="">Todas las clases</option><option value="A">Clase A</option><option value="B">Clase B</option><option value="C">Clase C</option></select>
+        <select id="fArea"><option value="">Todas las áreas</option>${opcionesFiltro('areas', lista.map(m => m.area))}</select>
+        <select id="fClase"><option value="">Todas las clases</option>${opcionesFiltro('clases', lista.map(m => m.clase), c => 'Clase ' + c)}</select>
         ${selectorVista('maq')}
       </div>
       <div id="grid"></div>`;
@@ -545,13 +565,13 @@ const VIEWS = {
   },
 
   async guias() {
-    const lista = await call('guias');
+    const [lista] = await Promise.all([call('guias'), cargarListas()]);
     const nueva = can('editor') ? `<button class="btn btn-primary" data-act="nuevaGuia">${ic('plus', 18)} Nueva guía</button>` : '';
     const html = head('Biblioteca técnica', 'Guías de Funcionamiento', 'Procedimientos y principios de funcionamiento de cada máquina.', nueva) + `
       <div class="toolbar">
         <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar guía o máquina"></div>
-        <select id="fArea"><option value="">Todas las áreas</option>${uniq(lista.map(g => g.area)).map(a => `<option>${esc(a)}</option>`).join('')}</select>
-        ${can('editor') ? `<select id="fEst"><option value="">Todos los estados</option>${ESTADOS_GUIA.map(e => `<option>${e}</option>`).join('')}</select>` : ''}
+        <select id="fArea"><option value="">Todas las áreas</option>${opcionesFiltro('areas', lista.map(g => g.area))}</select>
+        ${can('editor') ? `<select id="fEst"><option value="">Todos los estados</option>${opcionesFiltro('estadosGuia', lista.map(g => g.estado))}</select>` : ''}
         ${selectorVista('gui')}
       </div>
       <div id="grid"></div>`;
@@ -591,12 +611,12 @@ const VIEWS = {
   },
 
   async documentos() {
-    const lista = await call('documentos');
+    const [lista] = await Promise.all([call('documentos'), cargarListas()]);
     const nuevo = can('editor') ? `<button class="btn btn-primary" data-act="nuevoDocumento">${ic('plus', 18)} Nuevo documento</button>` : '';
     const html = head('Biblioteca técnica', 'Documentación', 'Manuales, fichas técnicas y documentos de operación por máquina.', nuevo) + `
       <div class="toolbar">
         <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar documento o máquina"></div>
-        <select id="fTipo"><option value="">Todos los tipos</option>${uniq(lista.map(d => d.tipo)).map(t => `<option>${esc(t)}</option>`).join('')}</select>
+        <select id="fTipo"><option value="">Todos los tipos</option>${opcionesFiltro('tiposDoc', lista.map(d => d.tipo))}</select>
       </div>
       <div id="tabla"></div>`;
     return {
@@ -676,8 +696,57 @@ const VIEWS = {
     return head('Administración', 'Usuarios y accesos', 'Crea cuentas, asigna roles y controla quién puede ingresar.',
       `<button class="btn btn-primary" data-act="nuevoUsuario">${ic('plus', 18)} Nuevo usuario</button>`) +
       `<div id="uLista">${tablaUsuarios()}</div>`;
+  },
+
+  async listas() {
+    const r = S.cache.listasAdmin = await call('listasAdmin');
+    return head('Administración', 'Filtros y listas', 'Agrega, edita o elimina las opciones que aparecen en los filtros y formularios.') +
+      (r.configurada ? '' : '<div class="notice"><b>Falta crear la hoja «Listas».</b> Ejecuta inicializar() en el editor de Apps Script para poder editar estas opciones. Mientras tanto se muestran las predeterminadas.</div>') +
+      `<div class="grid2">${r.listas.map(l => tarjetaLista(l, r.configurada)).join('')}</div>`;
   }
 };
+
+/* ---------- Filtros y listas (admin) ---------- */
+const usosTxt = (l, n) => n ? plural(n, l.registros[0], l.registros[1]) : 'Sin uso';
+
+function tarjetaLista(l, editable) {
+  return `<section class="card pad lista-card">
+    <div class="lista-head">
+      <div><h2>${esc(l.titulo)}</h2><p class="muted sm">${esc(l.uso)}</p></div>
+      ${editable ? `<button class="btn btn-sm" data-act="nuevaOpcion" data-id="${esc(l.clave)}">${ic('plus', 16)} Agregar</button>` : ''}
+    </div>
+    <ul class="opciones">${l.opciones.map(o => `<li>
+      <div class="op-txt"><b>${esc(o.nombre)}</b>${o.descripcion ? `<span class="muted sm"> · ${esc(o.descripcion)}</span>` : ''}${o.fija
+        ? ` <span class="badge b-gray op-fija" title="Opción del sistema: no se puede renombrar ni eliminar">${ic('lock', 12)} Sistema</span>` : ''}</div>
+      <span class="muted sm op-usos">${usosTxt(l, o.usos)}</span>
+      ${editable ? `<div class="op-acts">${btnIcon('editarOpcion', o.id, 'edit', 'Editar')}${o.fija ? '' : btnIcon('eliminarOpcion', o.id, 'trash', 'Eliminar')}</div>` : ''}
+    </li>`).join('') || '<li class="muted sm">Sin opciones. Agrega la primera.</li>'}</ul>
+  </section>`;
+}
+
+function buscarOpcion(id) {
+  const l = ((S.cache.listasAdmin || {}).listas || []).find(x => x.opciones.some(o => o.id === id));
+  return l ? [l, l.opciones.find(o => o.id === id)] : [];
+}
+
+function formOpcion(l, o = {}) {
+  formModal({
+    titulo: (o.id ? 'Editar opción · ' : 'Nueva opción · ') + l.titulo,
+    sub: o.usos ? `Si cambias el nombre, se actualizarán ${usosTxt(l, o.usos)} que la usan.` : l.uso,
+    valores: o,
+    campos: [
+      { k: 'nombre', label: 'Nombre', req: true, full: true, ro: o.fija,
+        hint: o.fija ? 'Opción del sistema: solo puedes cambiar su descripción.' : 'Máximo 40 caracteres.' },
+      { k: 'descripcion', label: 'Descripción', full: true, hint: 'Opcional. Se muestra junto al nombre en los formularios (ej.: «crítica»).' }
+    ],
+    onSubmit: async d => {
+      const r = await call('guardarOpcion', { ...d, lista: l.clave, id: o.id || '' });
+      S.cache.listas = null;
+      toast(!o.id ? 'Opción agregada' : r.actualizados ? 'Opción actualizada en ' + usosTxt(l, r.actualizados) : 'Opción actualizada');
+      refrescar();
+    }
+  });
+}
 
 /* ---------- Usuarios paginados ---------- */
 const POR_PAGINA = 10;
@@ -800,19 +869,19 @@ async function opcionesMaquinas() {
   return lista.map(m => [m.id, m.id + ' · ' + m.nombre]);
 }
 
-const camposMaquina = editando => [
+const camposMaquina = (editando, v = {}) => [
   { k: 'id', label: 'Código', req: true, ro: editando, ph: 'DEM-107', hint: editando ? 'El código no se puede modificar.' : 'Mayúsculas, números y guiones.' },
   { k: 'nombre', label: 'Nombre', req: true },
-  { k: 'area', label: 'Área', type: 'select', opts: AREAS, req: true },
-  { k: 'clase', label: 'Clase', type: 'select', opts: [['A', 'Clase A · crítica'], ['B', 'Clase B · importante'], ['C', 'Clase C · apoyo']], req: true },
-  { k: 'estado', label: 'Estado', type: 'select', opts: ESTADOS_MAQ },
+  { k: 'area', label: 'Área', type: 'select', opts: opcionesForm('areas', v.area), req: true },
+  { k: 'clase', label: 'Clase', type: 'select', opts: opcionesForm('clases', v.clase, 'Clase '), req: true },
+  { k: 'estado', label: 'Estado', type: 'select', opts: opcionesForm('estadosMaquina', v.estado) },
   { k: 'ubicacion', label: 'Ubicación' },
   { k: 'fabricante', label: 'Fabricante', full: true },
   { k: 'descripcion', label: 'Descripción', type: 'textarea', full: true, req: true, max: 600 }
 ];
 
 async function formGuia(valores = {}) {
-  const maqs = await opcionesMaquinas();
+  const [maqs] = await Promise.all([opcionesMaquinas(), cargarListas()]);
   formModal({
     titulo: valores.id ? 'Editar guía ' + valores.id : 'Nueva guía de funcionamiento',
     valores,
@@ -820,7 +889,7 @@ async function formGuia(valores = {}) {
       { k: 'titulo', label: 'Título', req: true, full: true, ph: 'Principios de funcionamiento · …' },
       { k: 'maquinaId', label: 'Máquina', type: 'select', opts: maqs, req: true, ph: 'Selecciona una máquina' },
       { k: 'version', label: 'Versión', req: true, def: '0.1' },
-      { k: 'estado', label: 'Estado', type: 'select', opts: ESTADOS_GUIA, req: true },
+      { k: 'estado', label: 'Estado', type: 'select', opts: opcionesForm('estadosGuia', valores.estado), req: true },
       { k: 'resumen', label: 'Resumen', type: 'textarea', rows: 2, max: 300, full: true },
       { k: 'contenido', label: 'Contenido', type: 'textarea', rows: 12, req: true, full: true,
         hint: 'Formato: "## Título de sección", "- viñeta" y **negrita**.' }
@@ -853,14 +922,14 @@ function liberarArchivo() {
 }
 
 async function formDocumento(valores = {}) {
-  const maqs = await opcionesMaquinas();
+  const [maqs] = await Promise.all([opcionesMaquinas(), cargarListas()]);
   formModal({
     titulo: valores.id ? 'Editar documento ' + valores.id : 'Nuevo documento',
     valores,
     campos: [
       { k: 'titulo', label: 'Título', req: true, full: true },
       { k: 'maquinaId', label: 'Máquina', type: 'select', opts: maqs, req: true, ph: 'Selecciona una máquina' },
-      { k: 'tipo', label: 'Tipo', type: 'select', opts: TIPOS_DOC, req: true },
+      { k: 'tipo', label: 'Tipo', type: 'select', opts: opcionesForm('tiposDoc', valores.tipo), req: true },
       { k: 'version', label: 'Versión', def: '1.0' },
       { k: 'archivo', label: valores.archivo ? 'Reemplazar archivo' : 'Archivo', type: 'file', full: true,
         accept: (CFG.extensiones || []).map(x => '.' + x).join(','),
@@ -1060,7 +1129,8 @@ const ACT = {
     await call('eliminarTarea', { id }); toast('Tarea eliminada');
     S.cache.tareas = await call('tareas'); pintarTablero();
   },
-  nuevaMaquina() {
+  async nuevaMaquina() {
+    await cargarListas();
     formModal({
       titulo: 'Nueva máquina', campos: camposMaquina(false), valores: { estado: 'Operativa' },
       onSubmit: async d => {
@@ -1070,9 +1140,9 @@ const ACT = {
     });
   },
   async editarMaquina(id) {
-    const { maquina } = await call('maquina', { id });
+    const [{ maquina }] = await Promise.all([call('maquina', { id }), cargarListas()]);
     formModal({
-      titulo: 'Editar máquina', campos: camposMaquina(true), valores: maquina,
+      titulo: 'Editar máquina', campos: camposMaquina(true, maquina), valores: maquina,
       onSubmit: async d => { await call('guardarMaquina', d); toast('Cambios guardados'); go('maquina', { id }); }
     });
   },
@@ -1144,6 +1214,23 @@ const ACT = {
       ],
       onSubmit: async d => { await call('guardarUsuario', { ...d, id }); toast('Usuario actualizado'); refrescar(); }
     });
+  },
+  nuevaOpcion(clave) {
+    const l = ((S.cache.listasAdmin || {}).listas || []).find(x => x.clave === clave);
+    if (l) formOpcion(l);
+  },
+  editarOpcion(id) {
+    const [l, o] = buscarOpcion(id);
+    if (l) formOpcion(l, o);
+  },
+  async eliminarOpcion(id) {
+    const [l, o] = buscarOpcion(id);
+    if (!l) return;
+    if (o.usos) return toast(`No se puede eliminar «${o.nombre}»: la usan ${usosTxt(l, o.usos)}. Cámbiales la opción o renómbrala.`, true);
+    if (!await confirmar('Eliminar opción', `Se eliminará «${o.nombre}» de ${l.titulo}. Dejará de aparecer en los filtros y formularios.`)) return;
+    await call('eliminarOpcion', { id });
+    S.cache.listas = null;
+    toast('Opción eliminada'); refrescar();
   }
 };
 
