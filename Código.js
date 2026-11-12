@@ -45,14 +45,47 @@ const ESQUEMA = {
   Guias:      ['id', 'titulo', 'maquinaId', 'version', 'estado', 'resumen', 'contenido', 'autor', 'actualizado'],
   Documentos: ['id', 'titulo', 'maquinaId', 'tipo', 'url', 'version', 'actualizado', 'fileId', 'nombreArchivo', 'mimeType', 'tamano', 'autor'],
   Tareas:     ['id', 'titulo', 'descripcion', 'estado', 'prioridad', 'vence', 'asignadoA', 'creadoPor', 'creado', 'actualizado'],
-  Registro:   ['fecha', 'email', 'accion', 'detalle']
+  Registro:   ['fecha', 'email', 'accion', 'detalle'],
+  Listas:     ['id', 'lista', 'nombre', 'descripcion']
+};
+
+// Listas de opciones que el administrador edita (filtros y formularios). Cada lista indica en qué
+// hoja y columna se usa: al renombrar una opción se actualizan esos registros, y no se puede
+// eliminar si algún registro la usa. Las opciones "fijas" sostienen reglas del sistema
+// (solo las guías "Publicada" son visibles para lectores; "Operativa" es el estado por defecto).
+const LISTAS = {
+  areas: {
+    titulo: 'Áreas', uso: 'Filtro y formulario de Máquinas; las Guías heredan el área de su máquina.',
+    hoja: 'Maquinas', campo: 'area', registros: ['máquina', 'máquinas'],
+    opciones: ['Envasado', 'Destilación', 'Fermentación', 'Recepción', 'Bodega', 'Utilidades']
+  },
+  clases: {
+    titulo: 'Clases de máquina', uso: 'Filtro y formulario de Máquinas.',
+    hoja: 'Maquinas', campo: 'clase', registros: ['máquina', 'máquinas'],
+    opciones: [['A', 'crítica'], ['B', 'importante'], ['C', 'apoyo']]
+  },
+  estadosMaquina: {
+    titulo: 'Estados de máquina', uso: 'Formulario de Máquinas.',
+    hoja: 'Maquinas', campo: 'estado', registros: ['máquina', 'máquinas'], fijas: ['Operativa'],
+    opciones: ['Operativa', 'En mantención', 'Fuera de servicio']
+  },
+  estadosGuia: {
+    titulo: 'Estados de guía', uso: 'Filtro y formulario de Guías. Solo las guías «Publicada» las ven los lectores.',
+    hoja: 'Guias', campo: 'estado', registros: ['guía', 'guías'], fijas: ['Publicada'],
+    opciones: ESTADOS_GUIA
+  },
+  tiposDoc: {
+    titulo: 'Tipos de documento', uso: 'Filtro y formulario de Documentación.',
+    hoja: 'Documentos', campo: 'tipo', registros: ['documento', 'documentos'],
+    opciones: ['Manual de operación', 'Ficha técnica', 'Procedimiento', 'Plano', 'Registro']
+  }
 };
 
 // Columnas que ya no se usan y que inicializar() elimina de la planilla (datos sensibles heredados)
 const COLUMNAS_OBSOLETAS = { Usuarios: ['salt', 'hash'] };
 
 // Hojas cuya lectura se guarda en CacheService entre ejecuciones (Registro solo se escribe)
-const HOJAS_CACHE = ['Usuarios', 'Maquinas', 'Guias', 'Documentos', 'Tareas'];
+const HOJAS_CACHE = ['Usuarios', 'Maquinas', 'Guias', 'Documentos', 'Tareas', 'Listas'];
 const CACHE_HOJA_SEG = 10 * 60; // cambios hechos a mano en la planilla se ven en máx. 10 min
 
 /* =====================================================================
@@ -259,6 +292,15 @@ function sembrar_(ss) {
     });
     shD.getRange(2, 1, d.length, d[0].length).setValues(d);
   }
+
+  const shL = ss.getSheetByName('Listas');
+  if (shL.getLastRow() < 2) {
+    const l = [];
+    Object.keys(LISTAS).forEach(function (k) {
+      opcionesDefecto_(k).forEach(function (o) { l.push(['OPC-' + pad_(l.length + 1), k, o.nombre, o.descripcion]); });
+    });
+    shL.getRange(2, 1, l.length, l[0].length).setValues(l);
+  }
 }
 
 /* =====================================================================
@@ -462,6 +504,10 @@ const ACCIONES = {
   cancelarReunion:   ['lector', cancelarReunion_],
   recordatorios:     ['lector', recordatorios_],
   guardarPrefs:      ['lector', guardarPrefs_],
+  listas:            ['lector', listas_],
+  listasAdmin:       ['admin',  listasAdmin_],
+  guardarOpcion:     ['admin',  guardarOpcion_],
+  eliminarOpcion:    ['admin',  eliminarOpcion_],
   estadoAsistente:   ['lector', estadoAsistente_],
   asistente:         ['lector', asistente_]
 };
@@ -567,20 +613,20 @@ function verMaquina_(d, u) {
 function guardarMaquina_(d, u) {
   const id = String(d.id || '').trim().toUpperCase();
   if (!/^[A-Z0-9-]{2,20}$/.test(id)) throw new Error('Código inválido. Usa mayúsculas, números y guiones (ej. DEM-107).');
-  const existe = leer_('Maquinas').some(function (m) { return m.id === id; });
-  if (d.nuevo && existe) throw new Error('Ya existe una máquina con el código ' + id + '.');
-  if (!d.nuevo && !existe) throw new Error('La máquina no existe.');
-  if (['A', 'B', 'C'].indexOf(d.clase) < 0) throw new Error('Selecciona una clase válida.');
+  const previa = leer_('Maquinas').find(function (m) { return m.id === id; });
+  if (d.nuevo && previa) throw new Error('Ya existe una máquina con el código ' + id + '.');
+  if (!d.nuevo && !previa) throw new Error('La máquina no existe.');
+  const p = previa || {};
 
   guardar_('Maquinas', {
     id: id,
     nombre: txt_(d.nombre, 120, true, 'nombre'),
-    area: txt_(d.area, 60, true, 'área'),
-    clase: d.clase,
+    area: opcionValida_('areas', d.area, p.area, 'Selecciona un área válida.'),
+    clase: opcionValida_('clases', d.clase, p.clase, 'Selecciona una clase válida.'),
     descripcion: txt_(d.descripcion, 600, true, 'descripción'),
     ubicacion: txt_(d.ubicacion, 120),
     fabricante: txt_(d.fabricante, 120),
-    estado: txt_(d.estado, 40) || 'Operativa',
+    estado: opcionValida_('estadosMaquina', d.estado || 'Operativa', p.estado, 'Selecciona un estado válido.'),
     actualizado: hoy_()
   });
   log_(u.email, d.nuevo ? 'crear máquina' : 'editar máquina', id);
@@ -604,16 +650,16 @@ function verGuia_(d, u) {
 
 function guardarGuia_(d, u) {
   if (!leer_('Maquinas').some(function (m) { return m.id === d.maquinaId; })) throw new Error('Selecciona una máquina válida.');
-  if (ESTADOS_GUIA.indexOf(d.estado) < 0) throw new Error('Estado no válido.');
   const nuevo = !d.id;
-  if (!nuevo) buscarPorId_('Guias', d.id, 'La guía no existe.');
+  const previa = nuevo ? {} : buscarPorId_('Guias', d.id, 'La guía no existe.');
+  const estado = opcionValida_('estadosGuia', d.estado, previa.estado, 'Estado no válido.');
   const id = nuevo ? siguienteId_('Guias', 'GUI') : d.id;
   const obj = {
     id: id,
     titulo: txt_(d.titulo, 160, true, 'título'),
     maquinaId: d.maquinaId,
     version: txt_(d.version, 12, true, 'versión'),
-    estado: d.estado,
+    estado: estado,
     resumen: txt_(d.resumen, 300),
     contenido: txt_(d.contenido, 20000, true, 'contenido'),
     actualizado: hoy_()
@@ -639,7 +685,7 @@ function guardarDocumento_(d, u) {
   const fila = {
     titulo: txt_(d.titulo, 160, true, 'título'),
     maquinaId: d.maquinaId,
-    tipo: txt_(d.tipo, 60, true, 'tipo'),
+    tipo: opcionValida_('tiposDoc', d.tipo, previo && previo.tipo, 'Selecciona un tipo de documento válido.'),
     url: url,
     version: txt_(d.version, 12) || '1.0',
     actualizado: hoy_()
@@ -1214,6 +1260,134 @@ function personas_() {
   return leer_('Usuarios').filter(function (r) { return r.activo === 'SI'; })
     .map(function (r) { return { email: r.email, nombre: r.nombre, area: r.area }; })
     .sort(function (a, b) { return a.nombre.localeCompare(b.nombre, 'es'); });
+}
+
+/* =====================================================================
+ * LISTAS DE OPCIONES (filtros y formularios)
+ * ===================================================================*/
+function opcionesDefecto_(clave) {
+  return LISTAS[clave].opciones.map(function (o) {
+    return Array.isArray(o) ? { id: '', nombre: o[0], descripcion: o[1] } : { id: '', nombre: o, descripcion: '' };
+  });
+}
+
+// null si la hoja Listas aún no existe (falta ejecutar inicializar()): se usan las predeterminadas
+function filasListas_() {
+  if (!_memo.Listas && !db_().getSheetByName('Listas')) return null;
+  return leer_('Listas');
+}
+
+function opciones_(clave) {
+  const filas = filasListas_();
+  if (filas === null) return opcionesDefecto_(clave);
+  return filas.filter(function (f) { return f.lista === clave; })
+    .map(function (f) { return { id: f.id, nombre: f.nombre, descripcion: f.descripcion }; });
+}
+
+function esFija_(clave, nombre) {
+  return (LISTAS[clave].fijas || []).indexOf(nombre) >= 0;
+}
+
+// El valor debe estar en la lista. Al editar se acepta conservar el valor que ya tenía el
+// registro, aunque ya no esté en la lista (datos anteriores a la lista).
+function opcionValida_(clave, valor, previo, msg) {
+  const v = String(valor == null ? '' : valor).trim();
+  if (v && (v === previo || opciones_(clave).some(function (o) { return o.nombre === v; }))) return v;
+  throw new Error(msg);
+}
+
+function listas_() {
+  const out = {};
+  Object.keys(LISTAS).forEach(function (k) {
+    out[k] = opciones_(k).map(function (o) { return { nombre: o.nombre, descripcion: o.descripcion }; });
+  });
+  return out;
+}
+
+function listasAdmin_() {
+  return {
+    configurada: filasListas_() !== null,
+    listas: Object.keys(LISTAS).map(function (k) {
+      const def = LISTAS[k];
+      const usos = {};
+      leer_(def.hoja).forEach(function (r) { usos[r[def.campo]] = (usos[r[def.campo]] || 0) + 1; });
+      return {
+        clave: k, titulo: def.titulo, uso: def.uso, registros: def.registros,
+        opciones: opciones_(k).map(function (o) {
+          return { id: o.id, nombre: o.nombre, descripcion: o.descripcion, usos: usos[o.nombre] || 0, fija: esFija_(k, o.nombre) };
+        })
+      };
+    })
+  };
+}
+
+function exigirHojaListas_() {
+  if (filasListas_() === null) throw new Error('Falta la hoja «Listas». Ejecuta inicializar() en el editor de Apps Script.');
+}
+
+function guardarOpcion_(d, u) {
+  const def = LISTAS[d.lista];
+  if (!def) throw new Error('Lista no válida.');
+  exigirHojaListas_();
+  const nombre = txt_(d.nombre, 40, true, 'nombre');
+  const descripcion = txt_(d.descripcion, 80);
+  const ops = opciones_(d.lista);
+  const previa = d.id ? ops.find(function (o) { return o.id === d.id; }) : null;
+  if (d.id && !previa) throw new Error('La opción no existe.');
+  if (ops.some(function (o) { return o.id !== d.id && norm_(o.nombre) === norm_(nombre); })) {
+    throw new Error('Ya existe la opción «' + nombre + '» en ' + def.titulo + '.');
+  }
+  const renombrar = !!previa && previa.nombre !== nombre;
+  if (renombrar && esFija_(d.lista, previa.nombre)) {
+    throw new Error('«' + previa.nombre + '» es parte del funcionamiento de la intranet y no se puede renombrar.');
+  }
+  const id = previa ? previa.id : siguienteId_('Listas', 'OPC');
+  guardar_('Listas', { id: id, lista: d.lista, nombre: nombre, descripcion: descripcion });
+  const actualizados = renombrar ? reemplazarValor_(def.hoja, def.campo, previa.nombre, nombre) : 0;
+  log_(u.email, previa ? 'editar opción' : 'crear opción', def.titulo + ': ' +
+    (renombrar ? previa.nombre + ' → ' + nombre + ' (' + actualizados + ' ' + def.registros[1] + ')' : nombre));
+  return { id: id, actualizados: actualizados };
+}
+
+function eliminarOpcion_(d, u) {
+  exigirHojaListas_();
+  const o = buscarPorId_('Listas', d.id, 'La opción no existe.');
+  const def = LISTAS[o.lista];
+  if (!def) throw new Error('Lista no válida.');
+  if (esFija_(o.lista, o.nombre)) throw new Error('«' + o.nombre + '» es parte del funcionamiento de la intranet y no se puede eliminar.');
+  const n = leer_(def.hoja).filter(function (r) { return r[def.campo] === o.nombre; }).length;
+  if (n) {
+    throw new Error('No se puede eliminar «' + o.nombre + '»: la ' + (n === 1 ? 'usa 1 ' + def.registros[0] : 'usan ' + n + ' ' + def.registros[1]) +
+      '. Cámbiales la opción o renómbrala.');
+  }
+  borrar_('Listas', d.id);
+  log_(u.email, 'eliminar opción', def.titulo + ': ' + o.nombre);
+  return true;
+}
+
+// Cambia un valor por otro en una columna completa, en una sola escritura. Devuelve cuántas filas cambió.
+function reemplazarValor_(hoja, campo, viejo, nuevo) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sh = db_().getSheetByName(hoja);
+    const datos = sh.getDataRange().getValues();
+    const col = datos[0].map(String).indexOf(campo);
+    if (col < 0 || datos.length < 2) return 0;
+    let n = 0;
+    const columna = datos.slice(1).map(function (r) {
+      if (String(r[col]) === viejo) { n++; return [seguro_(nuevo)]; }
+      return [r[col]];
+    });
+    if (n) {
+      sh.getRange(2, col + 1, columna.length, 1).setValues(columna);
+      SpreadsheetApp.flush();
+      invalidarHoja_(hoja);
+    }
+    return n;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /* =====================================================================

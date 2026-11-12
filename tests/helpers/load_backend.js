@@ -92,7 +92,14 @@ function loadBackend(overrides = {}) {
   asistente_,
   respuestaGemini_,
   historialChat_,
-  contextoAsistente_
+  contextoAsistente_,
+  LISTAS,
+  listas_,
+  listasAdmin_,
+  guardarOpcion_,
+  eliminarOpcion_,
+  guardarMaquina_,
+  guardarGuia_
 });
 `;
 
