@@ -135,7 +135,7 @@ Al inicio de `src/Código.js`, en el objeto `APP`:
 | `SESION_HORAS` | Duración de la sesión (máximo 6). |
 | `MAX_INTENTOS` / `BLOQUEO_MIN` | Intentos fallidos antes de bloquear una cuenta y minutos de bloqueo. |
 | `REGISTRO_ABIERTO` | Muestra u oculta la pestaña **Registrarse**. |
-| `DOMINIOS_REGISTRO` | Limita el registro a ciertos dominios, por ejemplo `['pisquera.cl']`. Vacío = cualquiera. |
+| `DOMINIOS_REGISTRO` | Limita el registro a ciertos dominios, por ejemplo `['ccu.cl']`. Vacío = cualquiera. |
 | `CALENDARIO` | Nombre del calendario del equipo que crea `inicializar()`. |
 
 Los créditos y la versión del modal **Acerca de este sistema** se editan en la constante `ACERCA`, al inicio de `src/App.html`.

@@ -124,14 +124,14 @@ function mostrarLogin(msg) {
   m.textContent = msg || '';
   m.classList.toggle('hidden', !msg);
 
-  if (CFG.ssoEmail) {
-    const p = $('#ssoPrompt');
-    if (p) {
-      p.classList.remove('hidden');
-      $('#ssoEmailLabel').textContent = CFG.ssoEmail;
-      $('#loginForm').email.value = CFG.ssoEmail;
-    }
-  }
+  // Las cuentas @ccu.cl solo entran con la sesión de Google detectada por el servidor;
+  // el campo de correo es exclusivo para las cuentas de prueba @demo.cl.
+  const sso = !!CFG.ssoEmail;
+  $('#ssoPrompt').classList.toggle('hidden', !sso);
+  $('#ssoEmailLabel').textContent = CFG.ssoEmail || '';
+  $('#ssoAusente').classList.toggle('hidden', sso || !!msg);
+  $('#demoBox').classList.toggle('hidden', !CFG.demo);
+  $('#registroForm').email.value = CFG.ssoEmail || '';
 
   mostrarTab('login');
 }
@@ -151,10 +151,10 @@ async function onRegistro(ev) {
   ev.preventDefault();
   const f = ev.target, btn = $('button[type=submit]', f), err = $('#registroErr');
   err.textContent = '';
-  if (!f.nombre.value.trim() || !f.email.value.trim()) { err.textContent = 'Completa tu nombre y correo corporativo.'; return; }
+  if (!f.nombre.value.trim()) { err.textContent = 'Completa tu nombre.'; return; }
   btn.disabled = true; btn.textContent = 'Registrando…';
   try {
-    const o = await run('registrarse', { nombre: f.nombre.value, email: f.email.value, area: f.area.value });
+    const o = await run('registrarse', { nombre: f.nombre.value, area: f.area.value });
     f.reset();
     entrar(o.token, o.usuario);
     toast('¡Cuenta registrada! Bienvenido a la intranet.');
@@ -195,15 +195,20 @@ async function onLogin(ev) {
   const f = ev.target, btn = $('button[type=submit]', f), err = $('#loginErr');
   err.textContent = '';
   $('#loginMsg').classList.add('hidden');
+  const email = f.email.value.trim().toLowerCase();
+  if (!/@demo\.cl$/.test(email)) {
+    err.textContent = 'Aquí solo ingresan las cuentas de prueba @demo.cl. Las cuentas @ccu.cl entran con su sesión de Google.';
+    return;
+  }
   btn.disabled = true; btn.textContent = 'Verificando cuenta…';
   try {
-    const o = await run('login', f.email.value);
+    const o = await run('login', email);
     f.reset();
     entrar(o.token, o.usuario);
   } catch (e) {
     err.textContent = e.message;
   } finally {
-    btn.disabled = false; btn.textContent = 'Ingresar con Google SSO';
+    btn.disabled = false; btn.textContent = 'Ingresar con cuenta de prueba';
   }
 }
 
@@ -213,7 +218,7 @@ async function onSsoDirecto() {
   err.textContent = '';
   btn.disabled = true;
   try {
-    const o = await run('login', CFG.ssoEmail);
+    const o = await run('login');
     entrar(o.token, o.usuario);
   } catch (e) {
     err.textContent = e.message;
