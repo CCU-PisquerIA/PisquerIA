@@ -1,6 +1,6 @@
 # Intranet Pisquera de Chile
 
-Intranet de Pisquera de Chile (CCU) construida en **Google Apps Script**. Reúne en un solo lugar las máquinas de la planta, sus guías de funcionamiento, la documentación técnica, las reuniones del equipo y las tareas, con login propio, roles de usuario y la identidad visual de la empresa.
+Intranet de Pisquera de Chile (CCU) construida en **Google Apps Script**. Reúne en un solo lugar las máquinas de la planta, sus guías de funcionamiento, la documentación técnica, las reuniones del equipo y las tareas, con acceso mediante identidad de Google o cuentas de demostración, roles de usuario y la identidad visual de la empresa.
 
 El proyecto se desarrolla en VS Code, se versiona en este repositorio y se sincroniza con Apps Script mediante [clasp](https://github.com/google/clasp).
 
@@ -14,18 +14,18 @@ El proyecto se desarrolla en VS Code, se versiona en este repositorio y se sincr
 | **Máquinas** | Catálogo de equipos por área, clase y estado. Vista en tarjetas o en listado. |
 | **Guías de Funcionamiento** | Guías por máquina con versión y estado (Borrador, En revisión, Publicada). Vista en tarjetas o en listado. |
 | **Documentación** | Manuales, fichas técnicas y procedimientos asociados a cada máquina. |
-| **Reuniones** | Calendario mensual del equipo. Agendar reuniones con invitación automática y enlace de Meet. |
+| **Reuniones** | Vista mensual de reuniones en las que el usuario participa o figura como creador. Agendar reuniones con invitación automática y enlace de Meet. |
 | **Tareas** | Tablero Pendiente, En curso y Completada, con responsable, prioridad, vencimiento y aviso por correo. |
-| **Mi Perfil** | Datos de la cuenta, cambio de contraseña y preferencias de notificación. |
-| **Usuarios y accesos** | (Solo administradores) Crear usuarios, asignar roles, activar o desactivar cuentas y restablecer contraseñas. |
+| **Mi Perfil** | Datos de la cuenta y preferencias de notificación. |
+| **Usuarios y accesos** | (Solo administradores) Crear usuarios, asignar roles y activar o desactivar cuentas. |
 
 ### Roles
 
 | Rol | Puede |
 |---|---|
-| **Lector** | Consultar máquinas, guías publicadas y documentos; agendar reuniones; gestionar sus tareas; cambiar su contraseña. |
-| **Editor** | Todo lo del lector, más crear y editar máquinas, guías y documentos, y ver guías en borrador o en revisión. |
-| **Administrador** | Todo lo del editor, más eliminar registros y administrar usuarios y roles. |
+| **Lector** | Consultar máquinas, guías publicadas y documentos; agendar reuniones; gestionar sus tareas y preferencias. |
+| **Editor** | Todo lo del lector, más crear y editar máquinas y ver guías en borrador o en revisión. |
+| **Administrador** | Todo lo del editor, más crear/editar guías y documentos, eliminar registros y administrar usuarios y roles. |
 
 Las cuentas creadas con **Registrarse** parten como Lector; un administrador puede subirles el rol.
 
@@ -44,23 +44,14 @@ Las cuentas creadas con **Registrarse** parten como Lector; un administrador pue
 
 ## Estructura del repositorio
 
-```
-intranet-pisquera/
-├── .clasp.json          Conecta la carpeta con el proyecto de Apps Script ("rootDir": "src")
-├── .gitignore
-├── README.md
-├── docs/
-│   └── COMANDOS-CLASP.txt   Guía rápida de comandos
-└── src/                 Todo lo que se sube a Apps Script
-    ├── appsscript.json      Manifiesto: zona horaria, permisos y configuración de la web app
-    ├── Código.js            Backend (en Apps Script aparece como Código.gs)
-    ├── Index.html           Estructura: login, registro, menú y contenedor de vistas
-    ├── Styles.html          Estilos y paleta institucional
-    ├── App.html             Lógica del frontend y vistas de cada módulo
-    └── LogoCompleto.html    Logo de la empresa en base64
-```
+Los archivos de ejecución están en la raíz: `Código.js`, `Sesiones.js`,
+`Identificadores.js`, `Inicializacion.js`, `Calendario.js`, las plantillas HTML y
+`appsscript.json`. Apps Script comparte un espacio global entre los archivos JavaScript;
+las plantillas se incluyen por nombre. Las pruebas están en `tests/` y se excluyen
+mediante `.claspignore`, junto con la documentación y los archivos de desarrollo.
 
-Los archivos dentro de `src/` deben quedar planos, sin subcarpetas: Apps Script no tiene carpetas y `include('App')` dejaría de encontrar los archivos.
+Consulta [SEGURIDAD_Y_MODULOS.md](SEGURIDAD_Y_MODULOS.md) para responsabilidades,
+configuración y límites, y [tests/README.md](tests/README.md) para la verificación local.
 
 ---
 
@@ -84,15 +75,17 @@ clasp push               # sube el código al proyecto indicado en .clasp.json
 
 Luego, en el editor de Apps Script (`clasp open-script`):
 
-1. Selecciona la función `inicializar` y presiona **Ejecutar**. Autoriza los permisos que pida.
+1. Solo la cuenta responsable del proyecto, con identidad activa y efectiva coincidentes, puede ejecutar `inicializar`. Revisa los recursos antes de autorizar su ejecución.
    Crea la planilla de datos, el calendario del equipo y los datos de demostración. Se puede volver a ejecutar sin borrar datos: solo agrega lo que falte.
 2. **Implementar → Nueva implementación → Aplicación web**, con:
    - **Ejecutar como:** Yo
    - **Quién tiene acceso:** Cualquier usuario del dominio (o con cuenta de Google)
 
-La app debe ejecutarse **como el dueño** del proyecto: así los usuarios no necesitan acceso a la planilla y todo pasa por el login de la intranet. Esto ya está definido en `appsscript.json` (`"executeAs": "USER_DEPLOYING"`).
+La configuración prevista ejecuta la app **como la cuenta que implementa**: así los usuarios no necesitan acceso a la planilla y todo pasa por el login de la intranet. Esto ya está definido en `appsscript.json` (`"executeAs": "USER_DEPLOYING"`).
 
 ---
+
+Las instrucciones de conexión, sincronización y publicación siguientes son operaciones manuales reservadas al responsable; no forman parte de las pruebas locales. Antes de usar datos reales se deben verificar identidad, permisos, recursos y cuentas de demostración en el entorno autorizado.
 
 ## Flujo de trabajo
 
@@ -115,7 +108,7 @@ Más comandos en [`docs/COMANDOS-CLASP.txt`](docs/COMANDOS-CLASP.txt).
 
 ### Reglas del equipo
 
-1. **GitHub es la versión oficial del código.** Haz siempre `git pull` antes de `clasp push`.
+1. Confirma con el equipo cuál es la versión acordada y compara los cambios locales y remotos antes de sincronizar. La copia local no demuestra qué versión está publicada.
 2. **`clasp push` reemplaza todo lo que hay en Apps Script.** No editen en el navegador mientras otros trabajan en VS Code.
 3. Si alguien editó en el navegador, rescata el cambio con `clasp pull`, luego `git commit` y `git push`.
 4. Prueba en `/dev` antes de publicar en el link oficial.
@@ -125,7 +118,7 @@ Más comandos en [`docs/COMANDOS-CLASP.txt`](docs/COMANDOS-CLASP.txt).
 
 ## Configuración
 
-Al inicio de `src/Código.js`, en el objeto `APP`:
+Al inicio de `Código.js`, en el objeto `APP`:
 
 | Opción | Para qué sirve |
 |---|---|
@@ -138,7 +131,7 @@ Al inicio de `src/Código.js`, en el objeto `APP`:
 | `DOMINIOS_REGISTRO` | Limita el registro a ciertos dominios, por ejemplo `['ccu.cl']`. Vacío = cualquiera. |
 | `CALENDARIO` | Nombre del calendario del equipo que crea `inicializar()`. |
 
-Los créditos y la versión del modal **Acerca de este sistema** se editan en la constante `ACERCA`, al inicio de `src/App.html`.
+Los créditos y la versión del modal **Acerca de este sistema** se editan en la constante `ACERCA`, al inicio de `App.html`.
 
 ---
 
@@ -148,7 +141,7 @@ Los créditos y la versión del modal **Acerca de este sistema** se editan en la
 
 | Hoja | Contenido |
 |---|---|
-| `Usuarios` | Cuentas, rol, estado y preferencias. Las contraseñas se guardan cifradas con sal, nunca en texto plano. |
+| `Usuarios` | Cuentas, rol, estado y preferencias. No almacena contraseñas; la identidad corporativa se verifica con Google. |
 | `Maquinas` | Catálogo de equipos. |
 | `Guias` | Guías de funcionamiento y su contenido. |
 | `Documentos` | Enlaces a manuales y fichas técnicas. |
@@ -162,7 +155,7 @@ Los créditos y la versión del modal **Acerca de este sistema** se editan en la
 - Cada acción del frontend pasa por una única función del servidor que valida la sesión y el rol antes de ejecutarse.
 - Tras 5 intentos fallidos, la cuenta se bloquea 15 minutos.
 - La planilla de datos es privada del dueño del proyecto; los usuarios no tienen acceso directo a ella.
-- **Antes de usar la intranet con datos reales:** cambia la contraseña o desactiva las cuentas de demostración (definidas en `sembrar_()`, en `src/Código.js`) y deja `MODO_DEMO` en `false`.
+- **Antes de usar la intranet con datos reales:** desactiva las cuentas de demostración, elimina o deja en `false` la propiedad `DEMO_ACCESS_ENABLED` y deja `MODO_DEMO` en `false`. El modo demo no aísla automáticamente los datos.
 
 ---
 
@@ -171,3 +164,10 @@ Los créditos y la versión del modal **Acerca de este sistema** se editan en la
 - Javier Catalán
 - Claudio Palta
 - Benjamin Cuello
+
+## Verificación local
+
+Ejecutar `npm test` con Node.js. Los servicios de Google se simulan: una suite correcta
+no certifica el despliegue, los permisos corporativos ni las integraciones reales.
+El acceso demo requiere además `DEMO_ACCESS_ENABLED=true` en propiedades del script;
+sin esa activación explícita queda deshabilitado aunque `MODO_DEMO` sea verdadero.

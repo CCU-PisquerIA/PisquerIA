@@ -3,19 +3,22 @@ const path = require('path');
 const vm = require('vm');
 
 function loadBackend(overrides = {}) {
-  const codePath = path.resolve(__dirname, '../../Código.js');
-  const code = fs.readFileSync(codePath, 'utf8');
+  const root = path.resolve(__dirname, '../..');
+  const code = fs.readdirSync(root).filter((name) => name.endsWith('.js')).sort()
+    .map((name) => fs.readFileSync(path.join(root, name), 'utf8')).join('\n');
+  const properties = new Map([['DB_ID', 'CAL_123'], ['CAL_ID', 'CAL_123'], ['DEMO_ACCESS_ENABLED', 'true']]);
 
-  // Apps Script globals mocked for headless Node execution
+  // Servicios simulados para ejecutar las pruebas sin acceso a Google.
   const sandbox = {
     Logger: { log: () => {} },
     Session: {
-      getActiveUser: () => ({ getEmail: () => 'usuario@ccu.cl' })
+      getActiveUser: () => ({ getEmail: () => 'usuario@ccu.cl' }),
+      getEffectiveUser: () => ({ getEmail: () => 'usuario@ccu.cl' })
     },
     PropertiesService: {
       getScriptProperties: () => ({
-        getProperty: () => 'CAL_123',
-        setProperty: () => {}
+        getProperty: (key) => properties.get(key) || null,
+        setProperty: (key, value) => properties.set(key, String(value))
       })
     },
     CacheService: {
@@ -54,7 +57,7 @@ function loadBackend(overrides = {}) {
   Object.assign(sandbox, overrides);
   vm.createContext(sandbox);
 
-  // Return top-level declarations needed for verification
+  // Expone los contratos necesarios para verificar el backend.
   const exportsScript = `
 ;({
   APP,
@@ -99,7 +102,9 @@ function loadBackend(overrides = {}) {
   guardarOpcion_,
   eliminarOpcion_,
   guardarMaquina_,
-  guardarGuia_
+  guardarGuia_,
+  siguienteId_,
+  exigirInicializacion_
 });
 `;
 

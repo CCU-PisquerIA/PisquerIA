@@ -57,6 +57,6 @@ test('Documentos schema keeps legacy columns first so inicializar() can migrate'
 
 test('archivoDocumento is only reachable through api() with at least lector role', () => {
   assert.strictEqual(app.ACCIONES.archivoDocumento[0], 'lector');
-  assert.strictEqual(app.ACCIONES.guardarDocumento[0], 'editor');
+  assert.strictEqual(app.ACCIONES.guardarDocumento[0], 'admin');
   assert.strictEqual(app.ACCIONES.eliminarDocumento[0], 'admin');
 });

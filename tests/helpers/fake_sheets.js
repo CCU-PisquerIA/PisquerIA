@@ -44,13 +44,19 @@ function fakeCache() {
 function fakeServicios(hojas) {
   const sheets = Object.fromEntries(Object.entries(hojas).map(([n, rows]) => [n, new FakeSheet(rows)]));
   const cache = fakeCache();
+  const properties = new Map([['DB_ID', 'DB_TEST'], ['DEMO_ACCESS_ENABLED', 'true']]);
+  const scriptProperties = {
+    getProperty: (key) => properties.get(key) || null,
+    setProperty: (key, value) => { properties.set(key, String(value)); }
+  };
   return {
     sheets,
     cache,
+    properties,
     overrides: {
       SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => sheets[n] }), flush: () => {} },
       CacheService: { getScriptCache: () => cache },
-      PropertiesService: { getScriptProperties: () => ({ getProperty: () => 'DB_TEST', setProperty: () => {} }) }
+      PropertiesService: { getScriptProperties: () => scriptProperties }
     }
   };
 }

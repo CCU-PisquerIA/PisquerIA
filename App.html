@@ -153,7 +153,7 @@ function mostrarLogin(msg) {
   $('#cambioCuenta').classList.toggle('hidden', sso);
   const bc = $('#btnCambiarCuenta');
   bc.href = bc.getAttribute('href').split('?')[0] + (CFG.appUrl ? '?continue=' + encodeURIComponent(CFG.appUrl) : '');
-  $('#demoBox').classList.toggle('hidden', !CFG.demo);
+  $('#demoBox').classList.toggle('hidden', !CFG.cuentasDemo);
   $('#registroForm').email.value = CFG.ssoEmail || '';
 
   mostrarTab('login');
@@ -386,7 +386,7 @@ function tablaDocs(docs, conMaquina = true) {
       ${conMaquina ? `<td><a class="lnk" data-go="maquina" data-id="${esc(d.maquinaId)}">${esc(d.maquinaId)}</a></td>` : ''}
       <td>${esc(d.version)}</td>
       <td class="muted">${esc(d.actualizado)}</td>
-      <td class="row-acts">${linkDoc(d)}${can('editor') ? btnIcon('editarDocumento', d.id, 'edit', 'Editar') : ''}${can('admin') ? btnIcon('eliminarDocumento', d.id, 'trash', 'Eliminar') : ''}</td>
+      <td class="row-acts">${linkDoc(d)}${can('admin') ? btnIcon('editarDocumento', d.id, 'edit', 'Editar') : ''}${can('admin') ? btnIcon('eliminarDocumento', d.id, 'trash', 'Eliminar') : ''}</td>
     </tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -557,16 +557,16 @@ const VIEWS = {
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || '—')}</dd></div>`).join('')}</dl>
       </div>
 
-      <div class="sec-head"><h2>Guías de funcionamiento</h2>${can('editor') ? `<button class="btn btn-sm" data-act="nuevaGuia" data-id="${esc(m.id)}">${ic('plus', 16)} Nueva guía</button>` : ''}</div>
+      <div class="sec-head"><h2>Guías de funcionamiento</h2>${can('admin') ? `<button class="btn btn-sm" data-act="nuevaGuia" data-id="${esc(m.id)}">${ic('plus', 16)} Nueva guía</button>` : ''}</div>
       <div class="grid3">${d.guias.map(cardGuia).join('') || vacio('Esta máquina aún no tiene guías publicadas.')}</div>
 
-      <div class="sec-head"><h2>Documentación</h2>${can('editor') ? `<button class="btn btn-sm" data-act="nuevoDocumento" data-id="${esc(m.id)}">${ic('plus', 16)} Nuevo documento</button>` : ''}</div>
+      <div class="sec-head"><h2>Documentación</h2>${can('admin') ? `<button class="btn btn-sm" data-act="nuevoDocumento" data-id="${esc(m.id)}">${ic('plus', 16)} Nuevo documento</button>` : ''}</div>
       ${tablaDocs(d.documentos, false)}`;
   },
 
   async guias() {
     const [lista] = await Promise.all([call('guias'), cargarListas()]);
-    const nueva = can('editor') ? `<button class="btn btn-primary" data-act="nuevaGuia">${ic('plus', 18)} Nueva guía</button>` : '';
+    const nueva = can('admin') ? `<button class="btn btn-primary" data-act="nuevaGuia">${ic('plus', 18)} Nueva guía</button>` : '';
     const html = head('Biblioteca técnica', 'Guías de Funcionamiento', 'Procedimientos y principios de funcionamiento de cada máquina.', nueva) + `
       <div class="toolbar">
         <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar guía o máquina"></div>
@@ -594,7 +594,7 @@ const VIEWS = {
   async guia({ id }) {
     const g = await call('guia', { id });
     const acts = [
-      can('editor') && `<button class="btn" data-act="editarGuia" data-id="${esc(g.id)}">${ic('edit', 17)} Editar</button>`,
+      can('admin') && `<button class="btn" data-act="editarGuia" data-id="${esc(g.id)}">${ic('edit', 17)} Editar</button>`,
       can('admin') && `<button class="btn btn-danger" data-act="eliminarGuia" data-id="${esc(g.id)}">${ic('trash', 17)} Eliminar</button>`
     ].filter(Boolean).join('');
     return `
@@ -612,7 +612,7 @@ const VIEWS = {
 
   async documentos() {
     const [lista] = await Promise.all([call('documentos'), cargarListas()]);
-    const nuevo = can('editor') ? `<button class="btn btn-primary" data-act="nuevoDocumento">${ic('plus', 18)} Nuevo documento</button>` : '';
+    const nuevo = can('admin') ? `<button class="btn btn-primary" data-act="nuevoDocumento">${ic('plus', 18)} Nuevo documento</button>` : '';
     const html = head('Biblioteca técnica', 'Documentación', 'Manuales, fichas técnicas y documentos de operación por máquina.', nuevo) + `
       <div class="toolbar">
         <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar documento o máquina"></div>
@@ -881,6 +881,7 @@ const camposMaquina = (editando, v = {}) => [
 ];
 
 async function formGuia(valores = {}) {
+  if (!can('admin')) { toast('Solo el administrador puede gestionar guías.'); return; }
   const [maqs] = await Promise.all([opcionesMaquinas(), cargarListas()]);
   formModal({
     titulo: valores.id ? 'Editar guía ' + valores.id : 'Nueva guía de funcionamiento',
@@ -922,6 +923,7 @@ function liberarArchivo() {
 }
 
 async function formDocumento(valores = {}) {
+  if (!can('admin')) { toast('Solo el administrador puede gestionar documentos.'); return; }
   const [maqs] = await Promise.all([opcionesMaquinas(), cargarListas()]);
   formModal({
     titulo: valores.id ? 'Editar documento ' + valores.id : 'Nuevo documento',

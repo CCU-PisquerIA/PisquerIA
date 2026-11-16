@@ -115,6 +115,7 @@ function doGet() {
     nombre: APP.NOMBRE,
     logo: APP.LOGO_URL || include('LogoCompleto').trim(),
     demo: APP.MODO_DEMO,
+    cuentasDemo: demoHabilitada_(),
     registro: APP.REGISTRO_ABIERTO,
     dominios: APP.DOMINIOS_REGISTRO,
     maxArchivoMb: APP.MAX_ARCHIVO_MB,
@@ -139,60 +140,6 @@ function urlApp_() {
 
 function include(nombre) {
   return HtmlService.createHtmlOutputFromFile(nombre).getContent();
-}
-
-function inicializar() {
-  const props = PropertiesService.getScriptProperties();
-  let ss;
-  const id = props.getProperty('DB_ID');
-  if (id) {
-    ss = SpreadsheetApp.openById(id);
-  } else {
-    ss = SpreadsheetApp.create('BD · Intranet Pisquera de Chile');
-    props.setProperty('DB_ID', ss.getId());
-  }
-
-  Object.keys(ESQUEMA).forEach(function (nombre) {
-    let sh = ss.getSheetByName(nombre) || ss.insertSheet(nombre);
-    const cols = ESQUEMA[nombre];
-    if (sh.getLastRow() === 0) {
-      sh.getRange(1, 1, sh.getMaxRows(), cols.length).setNumberFormat('@'); // todo como texto
-      sh.getRange(1, 1, 1, cols.length).setValues([cols])
-        .setFontWeight('bold').setBackground('#0B1F44').setFontColor('#ffffff');
-      sh.setFrozenRows(1);
-    } else {
-      migrarHoja_(sh, nombre);
-    }
-    invalidarHoja_(nombre);
-  });
-
-  let cal = props.getProperty('CAL_ID') && CalendarApp.getCalendarById(props.getProperty('CAL_ID'));
-  if (!cal) {
-    cal = CalendarApp.createCalendar(APP.CALENDARIO, { timeZone: APP.ZONA, color: CalendarApp.Color.BLUE });
-    props.setProperty('CAL_ID', cal.getId());
-  }
-
-  // Carpeta del repositorio documental. Para usar la Unidad Compartida, crea ahí la carpeta
-  // y guarda su ID en la propiedad DOCS_FOLDER_ID antes de ejecutar inicializar().
-  let carpeta = null;
-  try { carpeta = props.getProperty('DOCS_FOLDER_ID') && DriveApp.getFolderById(props.getProperty('DOCS_FOLDER_ID')); }
-  catch (e) { carpeta = null; }
-  if (!carpeta) {
-    carpeta = DriveApp.createFolder(APP.CARPETA_DOCS);
-    carpeta.setDescription('Repositorio documental de la intranet. No compartir: la intranet entrega los archivos.');
-    props.setProperty('DOCS_FOLDER_ID', carpeta.getId());
-  }
-
-  ['Hoja 1', 'Sheet1', 'Hoja1'].forEach(function (n) {
-    const sh = ss.getSheetByName(n);
-    if (sh && ss.getSheets().length > 1) ss.deleteSheet(sh);
-  });
-
-  sembrar_(ss);
-  Object.keys(ESQUEMA).forEach(invalidarHoja_);
-  Logger.log('Base de datos lista: ' + ss.getUrl());
-  Logger.log('Calendario del equipo: ' + cal.getName());
-  Logger.log('Carpeta de documentos: ' + carpeta.getUrl());
 }
 
 // Migración por nombre de columna: elimina las obsoletas y agrega al final las que falten.
@@ -366,7 +313,7 @@ function dominio_(email) {
 }
 
 function cuentaDemo_(email) {
-  if (!APP.MODO_DEMO) throw new Error('Las cuentas de prueba están deshabilitadas.');
+  if (!demoHabilitada_()) throw new Error('Las cuentas de prueba están deshabilitadas.');
   const u = leer_('Usuarios').find(function (x) { return x.email.toLowerCase() === email; });
   if (!u) throw new Error('No existe la cuenta de prueba ' + email + '.');
   if (u.activo !== 'SI') throw new Error('Tu cuenta está desactivada. Contacta al administrador.');
@@ -384,7 +331,7 @@ function ssoPerfil_(email) {
     }
     const nombre = formatearNombreEmail_(email);
     u = {
-      id: 'USR-' + Date.now().toString(36).toUpperCase(),
+      id: 'USR-' + Utilities.getUuid().replace(/-/g, '').toUpperCase(),
       email: email,
       nombre: nombre,
       area: '',
@@ -442,35 +389,6 @@ function logout(token) {
   return JSON.stringify({ ok: true });
 }
 
-function ttl_() { return Math.min(APP.SESION_HORAS, 6) * 3600; }
-
-function abrirSesion_(usuario) {
-  const cache = CacheService.getScriptCache();
-  const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
-  cache.put('s_' + token, JSON.stringify(usuario), ttl_());
-  const lista = (cache.get('u_' + usuario.id) || '').split(',').filter(String);
-  lista.push(token);
-  cache.put('u_' + usuario.id, lista.slice(-5).join(','), ttl_());
-  return token;
-}
-
-function sesion_(token) {
-  if (!token) throw new Error('SESION_EXPIRADA');
-  const cache = CacheService.getScriptCache();
-  const raw = cache.get('s_' + token);
-  if (!raw) throw new Error('SESION_EXPIRADA');
-  cache.put('s_' + token, raw, ttl_()); // renovación deslizante
-  return JSON.parse(raw);
-}
-
-function cerrarSesionesDe_(idUsuario) {
-  const cache = CacheService.getScriptCache();
-  (cache.get('u_' + idUsuario) || '').split(',').filter(String)
-    .forEach(function (t) { cache.remove('s_' + t); });
-  cache.remove('u_' + idUsuario);
-}
-
-
 function publico_(u) {
   return { id: u.id, email: u.email, nombre: u.nombre, area: u.area, rol: u.rol };
 }
@@ -484,12 +402,12 @@ const ACCIONES = {
   eliminarMaquina:   ['admin',  eliminarMaquina_],
   guias:             ['lector', function (d, u) { return catalogo_(u).G.map(sinContenido_); }],
   guia:              ['lector', verGuia_],
-  guardarGuia:       ['editor', guardarGuia_],
+  guardarGuia:       ['admin', guardarGuia_],
   eliminarGuia:      ['admin',  eliminarGuia_],
   documentos:        ['lector', function (d, u) { return catalogo_(u).D; }],
   documento:         ['lector', function (d) { return docPublico_(buscarPorId_('Documentos', d.id, 'El documento no existe.')); }],
   archivoDocumento:  ['lector', archivoDocumento_],
-  guardarDocumento:  ['editor', guardarDocumento_],
+  guardarDocumento:  ['admin', guardarDocumento_],
   eliminarDocumento: ['admin',  eliminarDocumento_],
   perfil:            ['lector', perfil_],
   usuarios:          ['admin',  usuarios_],
@@ -514,10 +432,12 @@ const ACCIONES = {
 
 function api(token, accion, datos) {
   try {
+    if (typeof accion !== 'string' || !Object.prototype.hasOwnProperty.call(ACCIONES, accion)) {
+      throw new Error('Acción no válida.');
+    }
     const def = ACCIONES[accion];
-    if (!def) throw new Error('Acción no válida.');
     const u = sesion_(token);
-    if (ROLES[u.rol] < ROLES[def[0]]) throw new Error('No tienes permisos para realizar esta acción.');
+    if (!rolValido_(u.rol) || ROLES[u.rol] < ROLES[def[0]]) throw new Error('No tienes permisos para realizar esta acción.');
     return JSON.stringify({ ok: true, data: def[1](datos || {}, u) });
   } catch (e) {
     return JSON.stringify({ ok: false, error: e.message, expirada: e.message === 'SESION_EXPIRADA' });
@@ -810,7 +730,7 @@ function usuarios_() {
 }
 
 function guardarUsuario_(d, u) {
-  if (!ROLES[d.rol]) throw new Error('Selecciona un rol válido.');
+  if (!rolValido_(d.rol)) throw new Error('Selecciona un rol válido.');
   const nombre = txt_(d.nombre, 80, true, 'nombre');
   const area = txt_(d.area, 60);
 
@@ -822,7 +742,7 @@ function guardarUsuario_(d, u) {
       throw new Error('Ya existe un usuario con ese correo.');
     }
     guardar_('Usuarios', {
-      id: 'USR-' + Date.now().toString(36).toUpperCase(),
+      id: 'USR-' + Utilities.getUuid().replace(/-/g, '').toUpperCase(),
       email: email, nombre: nombre, area: area, rol: d.rol,
       activo: 'SI', creado: ahora_(), ultimoAcceso: ''
     });
@@ -973,7 +893,7 @@ function contextoAsistente_(u) {
     '',
     'Módulos del menú: Inicio, Máquinas, Guías de funcionamiento, Documentación, Reuniones, Tareas y Mi Perfil' +
       (ROLES[u.rol] >= ROLES.admin ? '; además Usuarios y accesos (solo administradores).' : '.') +
-      ' Permisos: lector consulta; editor crea y edita máquinas, guías y documentos; administrador además elimina y gestiona usuarios.',
+      ' Permisos: lector consulta; editor crea y edita máquinas; solo el administrador gestiona guías, documentos y usuarios, y elimina registros.',
     '',
     '=== MÁQUINAS (' + c.M.length + ') ===',
     c.M.map(function (m) {
@@ -1165,14 +1085,6 @@ function invalidarHoja_(hoja) {
   } catch (e) { /* si falla, el caché expira solo en CACHE_HOJA_SEG */ }
 }
 
-function siguienteId_(hoja, prefijo) {
-  const max = leer_(hoja).reduce(function (m, r) {
-    const n = parseInt(String(r.id).replace(prefijo + '-', ''), 10);
-    return isNaN(n) ? m : Math.max(m, n);
-  }, 0);
-  return prefijo + '-' + pad_(max + 1);
-}
-
 function log_(email, accion, detalle) {
   try {
     db_().getSheetByName('Registro').appendRow([ahora_(), seguro_(email), accion, seguro_(detalle || '')]);
@@ -1224,7 +1136,7 @@ function registrarse(d) {
       throw new Error('Ya existe una cuenta con ese correo. Inicia sesión.');
     }
     const nuevo = {
-      id: 'USR-' + Date.now().toString(36).toUpperCase(),
+      id: 'USR-' + Utilities.getUuid().replace(/-/g, '').toUpperCase(),
       email: email, nombre: nombre, area: area, rol: 'lector',
       activo: 'SI', creado: ahora_(), ultimoAcceso: ahora_(), prefs: JSON.stringify(PREFS_DEFECTO)
     };
@@ -1467,84 +1379,3 @@ function avisarTarea_(t, u, destino) {
 /* =====================================================================
  * REUNIONES 
  * ===================================================================*/
-function calendario_() {
-  const id = PropertiesService.getScriptProperties().getProperty('CAL_ID');
-  const cal = id && CalendarApp.getCalendarById(id);
-  if (!cal) throw new Error('El calendario del equipo no está configurado. Ejecuta inicializar() en el editor.');
-  return cal;
-}
-
-function eventos_(desde, hasta, u) {
-  const cal = calendario_();
-  return cal.getEvents(desde, hasta).map(function (ev) {
-    const invitados = ev.getGuestList().map(function (g) { return String(g.getEmail()).toLowerCase(); });
-    const creador = String(ev.getTag('creadoPor') || '').toLowerCase();
-    const texto = (ev.getLocation() || '') + ' ' + (ev.getDescription() || '');
-    const meet = (texto.match(/https:\/\/meet\.google\.com\/[a-z0-9-]+/i) || [''])[0];
-    return {
-      id: ev.getId(),
-      titulo: ev.getTitle() || '(Sin título)',
-      inicio: ev.getStartTime().toISOString(),
-      fin: ev.getEndTime().toISOString(),
-      todoElDia: ev.isAllDayEvent(),
-      lugar: ev.getLocation(),
-      descripcion: ev.getDescription(),
-      participantes: invitados.length,
-      meet: meet,
-      soyInvitado: invitados.indexOf(u.email) >= 0,
-      organizo: creador === u.email,
-      creador: creador
-    };
-  });
-}
-
-function reuniones_(d, u) {
-  const desde = new Date(d.desde), hasta = new Date(d.hasta);
-  if (isNaN(desde) || isNaN(hasta) || hasta <= desde) throw new Error('Rango de fechas no válido.');
-  if (hasta - desde > 62 * 86400000) throw new Error('El rango no puede superar dos meses.');
-  return eventos_(desde, hasta, u);
-}
-
-function crearReunion_(d, u) {
-  const titulo = txt_(d.titulo, 160, true, 'título');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.fecha))) throw new Error('Selecciona una fecha.');
-  const inicio = Utilities.parseDate(d.fecha + ' ' + d.horaInicio, APP.ZONA, 'yyyy-MM-dd HH:mm');
-  const fin = Utilities.parseDate(d.fecha + ' ' + d.horaFin, APP.ZONA, 'yyyy-MM-dd HH:mm');
-  if (!(fin > inicio)) throw new Error('La hora de término debe ser posterior a la de inicio.');
-  const invitados = String(d.invitados || '').toLowerCase().split(/[,;\s]+/)
-    .filter(function (x) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x); });
-  if (invitados.indexOf(u.email) < 0) invitados.unshift(u.email);
-  if (invitados.length > 50) throw new Error('Máximo 50 invitados.');
-  const ev = calendario_().createEvent(titulo, inicio, fin, {
-    description: txt_(d.descripcion, 2000) + '\n\nAgendada por ' + u.nombre + ' desde la intranet.',
-    location: txt_(d.lugar, 160),
-    guests: invitados.join(','),
-    sendInvites: true
-  });
-  ev.setTag('creadoPor', u.email);
-  log_(u.email, 'agendar reunión', titulo + ' (' + d.fecha + ')');
-  return true;
-}
-
-function cancelarReunion_(d, u) {
-  const ev = calendario_().getEventById(String(d.id || ''));
-  if (!ev) throw new Error('La reunión ya no existe.');
-  const creador = String(ev.getTag('creadoPor') || '').toLowerCase();
-  if (creador !== u.email && ROLES[u.rol] < ROLES.admin) throw new Error('Solo quien agendó la reunión puede cancelarla.');
-  log_(u.email, 'cancelar reunión', ev.getTitle());
-  ev.deleteEvent();
-  return true;
-}
-
-function recordatorios_(d, u) {
-  const r = buscarPorId_('Usuarios', u.id, 'Usuario no encontrado.');
-  const minutos = prefs_(r).recordatorio;
-  if (!minutos) return { minutos: 0, eventos: [] };
-  const desde = new Date();
-  let eventos = [];
-  try {
-    eventos = eventos_(desde, new Date(desde.getTime() + 86400000), u)
-      .filter(function (e) { return !e.todoElDia && (e.soyInvitado || e.organizo); });
-  } catch (e) {}
-  return { minutos: minutos, eventos: eventos };
-}
