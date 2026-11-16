@@ -53,6 +53,10 @@ mediante `.claspignore`, junto con la documentación y los archivos de desarroll
 Consulta [SEGURIDAD_Y_MODULOS.md](SEGURIDAD_Y_MODULOS.md) para responsabilidades,
 configuración y límites, y [tests/README.md](tests/README.md) para la verificación local.
 
+La asociación guía/documento, los materiales transversales y la migración de columnas
+se describen en [BIBLIOTECA_DOCUMENTAL.md](BIBLIOTECA_DOCUMENTAL.md). Las fichas
+distinguen publicación para consulta de revisión técnica pendiente.
+
 ---
 
 ## Puesta en marcha

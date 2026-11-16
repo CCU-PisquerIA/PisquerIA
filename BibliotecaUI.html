@@ -1,0 +1,83 @@
+<script>
+async function vistaGuiaDocumental(id) {
+    const g = await call('guia', { id });
+    const acts = [
+      can('admin') && `<button class="btn" data-act="editarGuia" data-id="${esc(g.id)}">${ic('edit', 17)} Editar</button>`,
+      can('admin') && `<button class="btn btn-danger" data-act="eliminarGuia" data-id="${esc(g.id)}">${ic('trash', 17)} Eliminar</button>`
+    ].filter(Boolean).join('');
+    return `
+      <a class="back" data-go="guias">${ic('back', 18)} Volver a las guías</a>
+      <article class="card doc-view">
+        <div class="item-top"><span class="code">${esc(g.id)}</span><div class="acts">${badgeEstado(g.estado)}</div></div>
+        <h1>${esc(g.titulo)}</h1>
+        <div class="meta">${g.maquinaId ? `${esc(g.area)} · <a class="lnk" data-go="maquina" data-id="${esc(g.maquinaId)}">${esc(g.maquinaId)} · ${esc(g.maquinaNombre)}</a>` : `Transversal / línea · ${esc(g.alcance)}`}<br>
+          Versión ${esc(g.version)} · Actualizada ${esc(g.actualizado)}${g.autor ? ' · ' + esc(g.autor) : ''}</div>
+        ${g.resumen ? `<p class="lead">${esc(g.resumen)}</p>` : ''}
+        <div class="notice-sm" role="note"><strong>Revisión técnica: ${esc(g.revisionTecnica)}</strong><br>
+          Disponible para consulta. Su publicación no acredita aprobación para uso operacional.</div>
+        ${g.documento ? `<section aria-label="Documento de consulta"><h2>Documento de consulta</h2>
+          <p>${esc(g.documento.titulo)} · Versión ${esc(g.documento.version)}</p>${linkDoc(g.documento)}</section>`
+          : `<p class="muted">${g.documentoId ? 'El documento asociado no está disponible. Avisa a un administrador.' : 'Aún no se ha asociado un documento de consulta.'}</p>`}
+        <div class="prose">${md(g.contenido)}</div>
+        ${acts ? `<div class="acts" style="margin-top:28px">${acts}</div>` : ''}
+      </article>`;
+  }
+
+async function formGuia(valores = {}) {
+  if (!can('admin')) { toast('Solo el administrador puede gestionar guías.'); return; }
+  const [maqs, documentos] = await Promise.all([opcionesMaquinas(), call('documentos'), cargarListas()]);
+  formModal({
+    titulo: valores.id ? 'Editar guía ' + valores.id : 'Nueva guía de funcionamiento',
+    valores,
+    campos: [
+      { k: 'titulo', label: 'Título', req: true, full: true, ph: 'Principios de funcionamiento · …' },
+      { k: 'maquinaId', label: 'Máquina (opcional para material transversal)', type: 'select', opts: maqs, ph: 'Transversal / línea' },
+      { k: 'alcance', label: 'Alcance transversal o línea', max: 120, full: true, hint: 'Obligatorio si no seleccionas máquina. Ejemplo: Línea 3.' },
+      { k: 'documentoId', label: 'Documento de consulta', type: 'select', opts: documentos.map(d => [d.id, d.titulo + ' · ' + (d.maquinaNombre || d.alcance || d.maquinaId)]), ph: 'Sin documento asociado', full: true },
+      { k: 'revisionTecnica', label: 'Revisión técnica', type: 'select', opts: ['Pendiente de revisión', 'En revisión'], def: 'Pendiente de revisión', hint: 'Independiente del estado de publicación.' },
+      { k: 'version', label: 'Versión', req: true, def: '0.1' },
+      { k: 'estado', label: 'Estado', type: 'select', opts: opcionesForm('estadosGuia', valores.estado), req: true },
+      { k: 'resumen', label: 'Resumen', type: 'textarea', rows: 2, max: 300, full: true },
+      { k: 'contenido', label: 'Contenido', type: 'textarea', rows: 12, req: true, full: true,
+        hint: 'Formato: "## Título de sección", "- viñeta" y **negrita**.' }
+    ],
+    onSubmit: async d => {
+      const r = await call('guardarGuia', { ...d, id: valores.id || '' });
+      toast(valores.id ? 'Guía actualizada' : 'Guía creada');
+      go('guia', { id: r.id });
+    }
+  });
+}
+
+
+async function formDocumento(valores = {}) {
+  if (!can('admin')) { toast('Solo el administrador puede gestionar documentos.'); return; }
+  const [maqs] = await Promise.all([opcionesMaquinas(), cargarListas()]);
+  formModal({
+    titulo: valores.id ? 'Editar documento ' + valores.id : 'Nuevo documento',
+    valores,
+    campos: [
+      { k: 'titulo', label: 'Título', req: true, full: true },
+      { k: 'maquinaId', label: 'Máquina (opcional para material transversal)', type: 'select', opts: maqs, ph: 'Transversal / línea' },
+      { k: 'alcance', label: 'Alcance transversal o línea', max: 120, full: true, hint: 'Obligatorio sin máquina. Debe coincidir con el alcance de la guía asociada.' },
+      { k: 'tipo', label: 'Tipo', type: 'select', opts: opcionesForm('tiposDoc', valores.tipo), req: true },
+      { k: 'version', label: 'Versión', def: '1.0' },
+      { k: 'archivo', label: valores.archivo ? 'Reemplazar archivo' : 'Archivo', type: 'file', full: true,
+        accept: (CFG.extensiones || []).map(x => '.' + x).join(','),
+        hint: (valores.archivo ? `Archivo actual: ${valores.nombreArchivo || 'adjunto'}. Adjunta otro solo si quieres reemplazarlo. ` : '') +
+          `PDF, imágenes, Office o DWG, hasta ${CFG.maxArchivoMb || 10} MB. Se guarda en el repositorio protegido de Drive.` },
+      { k: 'url', label: 'Enlace externo', type: 'url', full: true, ph: 'https:\/\/…', hint: 'Opcional. Úsalo solo para documentos que viven fuera del repositorio.' }
+    ],
+    cargando: 'Subiendo…',
+    onSubmit: async d => {
+      const f = d.archivo; delete d.archivo;
+      const datos = { ...d, id: valores.id || '' };
+      if (f && f.size) datos.archivo = await leerArchivo(f);
+      await call('guardarDocumento', datos);
+      toast(valores.id ? 'Documento actualizado' : 'Documento creado');
+      refrescar();
+    }
+  });
+}
+
+</script>
