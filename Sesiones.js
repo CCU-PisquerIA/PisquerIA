@@ -1,7 +1,7 @@
 // Las sesiones se contrastan con la fila vigente y una versión persistente de revocación.
 function demoHabilitada_() {
   return APP.MODO_DEMO && PropertiesService.getScriptProperties()
-    .getProperty('DEMO_ACCESS_ENABLED') === 'true';
+    .getProperty('DEMO_ACCESS_ENABLED') !== 'false';
 }
 
 function ttl_() { return Math.min(APP.SESION_HORAS, 6) * 3600; }

@@ -11,9 +11,9 @@ entorno y los permisos; `.claspignore` excluye pruebas y documentación.
 
 | Archivo | Funciones principales y contratos |
 |---|---|
-| `Sesiones.js` | `demoHabilitada_()` devuelve si coinciden modo demo y propiedad explícita. `ttl_()` limita la duración a seis horas. `rolValido_(rol)` acepta solo claves propias de `ROLES`. `versionSesion_(id)` consulta la versión persistente. `usuarioSesionActual_(id)` lee la fila vigente sin caché. `abrirSesion_(usuario)` devuelve un token y conserva su versión. `sesion_(token)` devuelve el perfil vigente o lanza `SESION_EXPIRADA`. `cerrarSesionesDe_(id)` invalida todos sus tokens mediante cambio de versión. Depende de Sheets, CacheService, PropertiesService y utilidades del servidor. |
+| `Sesiones.js` | `demoHabilitada_()` devuelve si el modo demo está activo y la propiedad no vale exactamente `false`. `ttl_()` limita la duración a seis horas. `rolValido_(rol)` acepta solo claves propias de `ROLES`. `versionSesion_(id)` consulta la versión persistente. `usuarioSesionActual_(id)` lee la fila vigente sin caché. `abrirSesion_(usuario)` devuelve un token y conserva su versión. `sesion_(token)` devuelve el perfil vigente o lanza `SESION_EXPIRADA`. `cerrarSesionesDe_(id)` invalida todos sus tokens mediante cambio de versión. Depende de Sheets, CacheService, PropertiesService y utilidades del servidor. |
 | `Identificadores.js` | `siguienteId_(hoja, prefijo)` devuelve un identificador correlativo reservado bajo bloqueo, considerando contador persistente y filas actuales. Libera el bloqueo aun si falla; rechaza contadores corruptos o agotados. Depende de LockService, PropertiesService, `db_()` y `pad_()`. Las reservas fallidas dejan saltos deliberados. Los usuarios usan UUID. |
-| `Inicializacion.js` | `exigirInicializacion_()` exige identidad Google activa igual a la efectiva antes de tocar recursos. `inicializar()` prepara/migra hojas, calendario, carpeta documental y semillas; no devuelve datos al cliente. Depende del esquema y helpers del servidor y de los servicios de Google. No habilita el acceso demo automáticamente. |
+| `Inicializacion.js` | `exigirInicializacion_()` exige identidad Google activa igual a la efectiva antes de tocar recursos. `inicializar()` prepara/migra hojas, calendario, carpeta documental y semillas; no devuelve datos al cliente. Depende del esquema y helpers del servidor y de los servicios de Google. No configura la propiedad de acceso demo; rige el valor de `MODO_DEMO` y la política descrita abajo. |
 | `Calendario.js` | `calendario_()` obtiene el calendario configurado. `eventos_(desde,hasta,usuario)` filtra invitados/creador antes de construir resultados. `reuniones_(datos,usuario)` valida rango y devuelve eventos personales. `crearReunion_()` valida datos, crea e invita; `cancelarReunion_()` permite creador o administrador. Ambas devuelven `true`. `recordatorios_()` devuelve minutos/eventos conforme a preferencias. Depende de CalendarApp, perfiles, validación y bitácora. |
 
 ## Acceso y configuración
@@ -32,10 +32,12 @@ se utiliza tanto al listar como al autorizar cancelación de reuniones heredadas
 - Las reuniones listadas son personales, también para administrador. Las antiguas sin
   etiqueta se atribuyen por creadores del evento. Cancelar conserva la facultad
   administrativa existente; no concede visibilidad global en los listados.
-- Las cuentas `@demo.cl` requieren `APP.MODO_DEMO` y la propiedad del script
-  `DEMO_ACCESS_ENABLED` con valor exacto `true`. No tienen contraseña: cualquiera que
+- Las cuentas `@demo.cl` requieren `APP.MODO_DEMO` activo. Se habilitan por defecto si falta
+  `DEMO_ACCESS_ENABLED`; solo el valor exacto `false` las bloquea. Con modo demo
+  apagado nunca se habilitan, independientemente de la propiedad. No tienen contraseña: cualquiera que
   conozca el correo de una cuenta habilitada puede usarla. Solo sirven en un proyecto
-  aislado con datos ficticios. El indicador demo no separa bases ni sanea datos.
+  aislado con datos ficticios. Antes de producción establecer `MODO_DEMO: false`.
+  El indicador demo no separa bases ni sanea datos.
 - `SESSION_VERSION_<id>` y `SEQUENCE_<DB_ID>_<hoja>_<prefijo>` son propiedades internas;
   no deben reiniciarse como parte de mantenimiento ordinario.
 

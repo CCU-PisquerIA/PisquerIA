@@ -159,7 +159,7 @@ Los créditos y la versión del modal **Acerca de este sistema** se editan en la
 - Cada acción del frontend pasa por una única función del servidor que valida la sesión y el rol antes de ejecutarse.
 - Tras 5 intentos fallidos, la cuenta se bloquea 15 minutos.
 - La planilla de datos es privada del dueño del proyecto; los usuarios no tienen acceso directo a ella.
-- **Antes de usar la intranet con datos reales:** desactiva las cuentas de demostración, elimina o deja en `false` la propiedad `DEMO_ACCESS_ENABLED` y deja `MODO_DEMO` en `false`. El modo demo no aísla automáticamente los datos.
+- **Antes de usar la intranet con datos reales:** desactiva las cuentas de demostración, deja la propiedad `DEMO_ACCESS_ENABLED` en `false` y establece `MODO_DEMO: false` antes de producción. El modo demo no aísla automáticamente los datos.
 
 ---
 
@@ -173,5 +173,8 @@ Los créditos y la versión del modal **Acerca de este sistema** se editan en la
 
 Ejecutar `npm test` con Node.js. Los servicios de Google se simulan: una suite correcta
 no certifica el despliegue, los permisos corporativos ni las integraciones reales.
-El acceso demo requiere además `DEMO_ACCESS_ENABLED=true` en propiedades del script;
-sin esa activación explícita queda deshabilitado aunque `MODO_DEMO` sea verdadero.
+Con `MODO_DEMO: true`, el acceso demo está habilitado por defecto, aunque no exista
+la propiedad `DEMO_ACCESS_ENABLED`. Solo el valor exacto `false` de esa propiedad
+lo bloquea; otros valores no lo desactivan. Con `MODO_DEMO: false`, queda bloqueado
+independientemente de la propiedad. Antes de producción, establecer siempre
+`MODO_DEMO: false`; no utilizar cuentas demo con información real.
