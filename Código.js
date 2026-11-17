@@ -42,8 +42,8 @@ const PREFS_DEFECTO = { recordatorio: 10, avisoTareas: true };
 const ESQUEMA = {
   Usuarios:   ['id', 'email', 'nombre', 'area', 'rol', 'activo', 'creado', 'ultimoAcceso', 'prefs'],
   Maquinas:   ['id', 'nombre', 'area', 'clase', 'descripcion', 'ubicacion', 'fabricante', 'estado', 'actualizado'],
-  Guias:      ['id', 'titulo', 'maquinaId', 'version', 'estado', 'resumen', 'contenido', 'autor', 'actualizado'],
-  Documentos: ['id', 'titulo', 'maquinaId', 'tipo', 'url', 'version', 'actualizado', 'fileId', 'nombreArchivo', 'mimeType', 'tamano', 'autor'],
+  Guias:      ['id', 'titulo', 'maquinaId', 'version', 'estado', 'resumen', 'contenido', 'autor', 'actualizado', 'alcance', 'documentoId', 'revisionTecnica'],
+  Documentos: ['id', 'titulo', 'maquinaId', 'tipo', 'url', 'version', 'actualizado', 'fileId', 'nombreArchivo', 'mimeType', 'tamano', 'autor', 'alcance'],
   Tareas:     ['id', 'titulo', 'descripcion', 'estado', 'prioridad', 'vence', 'asignadoA', 'creadoPor', 'creado', 'actualizado'],
   Registro:   ['fecha', 'email', 'accion', 'detalle'],
   Listas:     ['id', 'lista', 'nombre', 'descripcion']
@@ -462,12 +462,13 @@ function catalogo_(u) {
   });
   G.forEach(function (g) {
     const m = mapa[g.maquinaId] || {};
-    g.maquinaNombre = m.nombre || '—';
-    g.area = m.area || '—';
+    g.maquinaNombre = m.nombre || g.alcance || 'Sin clasificación';
+    g.area = m.area || 'Transversal / línea';
+    g.revisionTecnica = revisionTecnicaGuia_(g.revisionTecnica);
   });
   const docs = D.map(function (d) {
     const p = docPublico_(d);
-    p.maquinaNombre = (mapa[d.maquinaId] || {}).nombre || '—';
+    p.maquinaNombre = (mapa[d.maquinaId] || {}).nombre || d.alcance || 'Sin clasificación';
     return p;
   });
   return { M: M, G: G, D: docs };
@@ -514,8 +515,8 @@ function buscar_(d, u) {
   };
   return {
     maquinas: c.M.filter(function (m) { return hay(m, ['id', 'nombre', 'area', 'descripcion', 'ubicacion']); }),
-    guias: c.G.filter(function (g) { return hay(g, ['id', 'titulo', 'resumen', 'contenido', 'maquinaId']); }).map(sinContenido_),
-    documentos: c.D.filter(function (x) { return hay(x, ['id', 'titulo', 'tipo', 'maquinaId']); })
+    guias: c.G.filter(function (g) { return hay(g, ['id', 'titulo', 'resumen', 'contenido', 'maquinaId', 'alcance']); }).map(sinContenido_),
+    documentos: c.D.filter(function (x) { return hay(x, ['id', 'titulo', 'tipo', 'maquinaId', 'alcance']); })
   };
 }
 
@@ -562,34 +563,6 @@ function eliminarMaquina_(d, u) {
   return true;
 }
 
-function verGuia_(d, u) {
-  const g = catalogo_(u).G.find(function (x) { return x.id === d.id; });
-  if (!g) throw new Error('La guía no existe o aún no está publicada.');
-  return g;
-}
-
-function guardarGuia_(d, u) {
-  if (!leer_('Maquinas').some(function (m) { return m.id === d.maquinaId; })) throw new Error('Selecciona una máquina válida.');
-  const nuevo = !d.id;
-  const previa = nuevo ? {} : buscarPorId_('Guias', d.id, 'La guía no existe.');
-  const estado = opcionValida_('estadosGuia', d.estado, previa.estado, 'Estado no válido.');
-  const id = nuevo ? siguienteId_('Guias', 'GUI') : d.id;
-  const obj = {
-    id: id,
-    titulo: txt_(d.titulo, 160, true, 'título'),
-    maquinaId: d.maquinaId,
-    version: txt_(d.version, 12, true, 'versión'),
-    estado: estado,
-    resumen: txt_(d.resumen, 300),
-    contenido: txt_(d.contenido, 20000, true, 'contenido'),
-    actualizado: hoy_()
-  };
-  if (nuevo) obj.autor = u.nombre;
-  guardar_('Guias', obj);
-  log_(u.email, nuevo ? 'crear guía' : 'editar guía', id);
-  return { id: id };
-}
-
 function eliminarGuia_(d, u) {
   borrar_('Guias', d.id);
   log_(u.email, 'eliminar guía', d.id);
@@ -597,19 +570,21 @@ function eliminarGuia_(d, u) {
 }
 
 function guardarDocumento_(d, u) {
-  if (!leer_('Maquinas').some(function (m) { return m.id === d.maquinaId; })) throw new Error('Selecciona una máquina válida.');
+  const clasificacion = clasificacionDocumental_(d);
   const url = txt_(d.url, 500);
   if (url && !/^https:\/\//i.test(url)) throw new Error('El enlace debe comenzar con https://');
   const nuevo = !d.id;
   const previo = nuevo ? null : buscarPorId_('Documentos', d.id, 'El documento no existe.');
   const fila = {
     titulo: txt_(d.titulo, 160, true, 'título'),
-    maquinaId: d.maquinaId,
+    maquinaId: clasificacion.maquinaId,
+    alcance: clasificacion.alcance,
     tipo: opcionValida_('tiposDoc', d.tipo, previo && previo.tipo, 'Selecciona un tipo de documento válido.'),
     url: url,
     version: txt_(d.version, 12) || '1.0',
     actualizado: hoy_()
   };
+  validarCambioDocumento_(previo, fila, Boolean(d.archivo));
   const blob = d.archivo ? blobArchivo_(d.archivo) : null;
   fila.id = nuevo ? siguienteId_('Documentos', 'DOC') : d.id;
 
@@ -636,6 +611,7 @@ function guardarDocumento_(d, u) {
 }
 
 function eliminarDocumento_(d, u) {
+  exigirDocumentoSinGuias_(d.id);
   const doc = buscarPorId_('Documentos', d.id, 'El documento no existe.');
   borrar_('Documentos', d.id);
   if (doc.fileId) papelera_(doc.fileId);

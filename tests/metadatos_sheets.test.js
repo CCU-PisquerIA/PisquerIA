@@ -35,7 +35,7 @@ test('migrarHoja_ appends missing columns at the end even if the sheet has extra
     ['DOC-001', 'Manual', 'DEM-101', 'Manual de operación', '', '1.0', '2026-11-01', 'no tocar']
   ]);
   const r = app.migrarHoja_(sh, 'Documentos');
-  assert.deepStrictEqual(Array.from(r.agregadas), ['fileId', 'nombreArchivo', 'mimeType', 'tamano', 'autor']);
+  assert.deepStrictEqual(Array.from(r.agregadas), ['fileId', 'nombreArchivo', 'mimeType', 'tamano', 'autor', 'alcance']);
   assert.strictEqual(sh.header()[7], 'notaManual');
   assert.strictEqual(sh.rows[1][7], 'no tocar');
 });

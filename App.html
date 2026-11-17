@@ -328,7 +328,8 @@ function cardGuia(g) {
   return `<article class="card item" data-go="guia" data-id="${esc(g.id)}">
     <div class="item-top"><span class="code">${esc(g.id)}</span>${badgeEstado(g.estado)}</div>
     <h3>${esc(g.titulo)}</h3>
-    <p class="desc">${esc(g.area)} · ${esc(g.maquinaId)}</p>
+    <p class="desc">${esc(g.area)} · ${esc(g.maquinaId || g.alcance)}</p>
+    <p class="muted sm">Revisión técnica: ${esc(g.revisionTecnica || 'Pendiente de revisión')}</p>
     <div class="item-foot"><span>Versión ${esc(g.version)}</span><span class="lnk">Consultar guía →</span></div>
   </article>`;
 }
@@ -361,10 +362,10 @@ function tablaMaquinas(lista) {
 
 function tablaGuias(lista) {
   return `<div class="card table-wrap"><table class="tbl tbl-lista">
-    <thead><tr><th>Guía</th><th>Área</th><th>Versión</th><th>Estado</th><th>Actualizada</th><th></th></tr></thead>
+    <thead><tr><th>Guía</th><th>Área</th><th>Versión</th><th>Estado</th><th>Revisión técnica</th><th>Actualizada</th><th></th></tr></thead>
     <tbody>${lista.map(g => `<tr data-go="guia" data-id="${esc(g.id)}" tabindex="0">
       <td><div class="celda-nom"><div class="tile-s t-green">${ic('guide', 18)}</div><div><b>${esc(g.titulo)}</b><span class="code">${esc(g.id)} · ${esc(g.maquinaNombre || g.maquinaId)}</span></div></div></td>
-      <td>${esc(g.area)}</td><td>${esc(g.version)}</td><td>${badgeEstado(g.estado)}</td><td class="muted">${fechaCorta(g.actualizado)}</td>
+      <td>${esc(g.area)}</td><td>${esc(g.version)}</td><td>${badgeEstado(g.estado)}</td><td>${esc(g.revisionTecnica || 'Pendiente de revisión')}</td><td class="muted">${fechaCorta(g.actualizado)}</td>
       <td class="row-acts"><span class="lnk">Consultar →</span></td></tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -383,7 +384,7 @@ function tablaDocs(docs, conMaquina = true) {
       <td class="code">${esc(d.id)}</td>
       <td><b>${esc(d.titulo)}</b></td>
       <td><span class="chip">${esc(d.tipo)}</span></td>
-      ${conMaquina ? `<td><a class="lnk" data-go="maquina" data-id="${esc(d.maquinaId)}">${esc(d.maquinaId)}</a></td>` : ''}
+      ${conMaquina ? `<td>${d.maquinaId ? `<a class="lnk" data-go="maquina" data-id="${esc(d.maquinaId)}">${esc(d.maquinaId)}</a>` : esc(d.alcance || 'Sin clasificación')}</td>` : ''}
       <td>${esc(d.version)}</td>
       <td class="muted">${esc(d.actualizado)}</td>
       <td class="row-acts">${linkDoc(d)}${can('admin') ? btnIcon('editarDocumento', d.id, 'edit', 'Editar') : ''}${can('admin') ? btnIcon('eliminarDocumento', d.id, 'trash', 'Eliminar') : ''}</td>
@@ -567,9 +568,9 @@ const VIEWS = {
   async guias() {
     const [lista] = await Promise.all([call('guias'), cargarListas()]);
     const nueva = can('admin') ? `<button class="btn btn-primary" data-act="nuevaGuia">${ic('plus', 18)} Nueva guía</button>` : '';
-    const html = head('Biblioteca técnica', 'Guías de Funcionamiento', 'Procedimientos y principios de funcionamiento de cada máquina.', nueva) + `
+    const html = head('Biblioteca técnica', 'Guías de Funcionamiento', 'Principios de funcionamiento por máquina o alcance transversal.', nueva) + `
       <div class="toolbar">
-        <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar guía o máquina"></div>
+        <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar guía, máquina o línea"></div>
         <select id="fArea"><option value="">Todas las áreas</option>${opcionesFiltro('areas', lista.map(g => g.area))}</select>
         ${can('editor') ? `<select id="fEst"><option value="">Todos los estados</option>${opcionesFiltro('estadosGuia', lista.map(g => g.estado))}</select>` : ''}
         ${selectorVista('gui')}
@@ -580,7 +581,7 @@ const VIEWS = {
       after() {
         const filtrar = () => {
           const q = norm($('#fQ').value), a = $('#fArea').value, e = $('#fEst') ? $('#fEst').value : '';
-          const r = lista.filter(g => (!a || g.area === a) && (!e || g.estado === e) && (!q || norm(g.id + ' ' + g.titulo + ' ' + g.maquinaId + ' ' + g.maquinaNombre).includes(q)));
+          const r = lista.filter(g => (!a || g.area === a) && (!e || g.estado === e) && (!q || norm(g.id + ' ' + g.titulo + ' ' + g.maquinaId + ' ' + g.maquinaNombre + ' ' + g.alcance).includes(q)));
           $('#grid').innerHTML = !r.length ? `<div class="grid3">${vacio('No hay guías que coincidan con el filtro.')}</div>`
             : vistaDe('gui') === 'lista' ? tablaGuias(r) : `<div class="grid3">${r.map(cardGuia).join('')}</div>`;
         };
@@ -591,31 +592,14 @@ const VIEWS = {
     };
   },
 
-  async guia({ id }) {
-    const g = await call('guia', { id });
-    const acts = [
-      can('admin') && `<button class="btn" data-act="editarGuia" data-id="${esc(g.id)}">${ic('edit', 17)} Editar</button>`,
-      can('admin') && `<button class="btn btn-danger" data-act="eliminarGuia" data-id="${esc(g.id)}">${ic('trash', 17)} Eliminar</button>`
-    ].filter(Boolean).join('');
-    return `
-      <a class="back" data-go="guias">${ic('back', 18)} Volver a las guías</a>
-      <article class="card doc-view">
-        <div class="item-top"><span class="code">${esc(g.id)}</span><div class="acts">${badgeEstado(g.estado)}</div></div>
-        <h1>${esc(g.titulo)}</h1>
-        <div class="meta">${esc(g.area)} · <a class="lnk" data-go="maquina" data-id="${esc(g.maquinaId)}">${esc(g.maquinaId)} · ${esc(g.maquinaNombre)}</a><br>
-          Versión ${esc(g.version)} · Actualizada ${esc(g.actualizado)}${g.autor ? ' · ' + esc(g.autor) : ''}</div>
-        ${g.resumen ? `<p class="lead">${esc(g.resumen)}</p>` : ''}
-        <div class="prose">${md(g.contenido)}</div>
-        ${acts ? `<div class="acts" style="margin-top:28px">${acts}</div>` : ''}
-      </article>`;
-  },
+  async guia({ id }) { return vistaGuiaDocumental(id); },
 
   async documentos() {
     const [lista] = await Promise.all([call('documentos'), cargarListas()]);
     const nuevo = can('admin') ? `<button class="btn btn-primary" data-act="nuevoDocumento">${ic('plus', 18)} Nuevo documento</button>` : '';
-    const html = head('Biblioteca técnica', 'Documentación', 'Manuales, fichas técnicas y documentos de operación por máquina.', nuevo) + `
+    const html = head('Biblioteca técnica', 'Documentación', 'Manuales, fichas técnicas y documentos por máquina o alcance transversal.', nuevo) + `
       <div class="toolbar">
-        <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar documento o máquina"></div>
+        <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar documento, máquina o línea"></div>
         <select id="fTipo"><option value="">Todos los tipos</option>${opcionesFiltro('tiposDoc', lista.map(d => d.tipo))}</select>
       </div>
       <div id="tabla"></div>`;
@@ -624,7 +608,7 @@ const VIEWS = {
       after() {
         const filtrar = () => {
           const q = norm($('#fQ').value), t = $('#fTipo').value;
-          const r = lista.filter(d => (!t || d.tipo === t) && (!q || norm(d.id + ' ' + d.titulo + ' ' + d.maquinaId + ' ' + d.maquinaNombre).includes(q)));
+          const r = lista.filter(d => (!t || d.tipo === t) && (!q || norm(d.id + ' ' + d.titulo + ' ' + d.maquinaId + ' ' + d.maquinaNombre + ' ' + d.alcance).includes(q)));
           $('#tabla').innerHTML = tablaDocs(r);
         };
         ['#fQ', '#fTipo'].forEach(s => $(s).addEventListener('input', filtrar));
@@ -880,29 +864,6 @@ const camposMaquina = (editando, v = {}) => [
   { k: 'descripcion', label: 'Descripción', type: 'textarea', full: true, req: true, max: 600 }
 ];
 
-async function formGuia(valores = {}) {
-  if (!can('admin')) { toast('Solo el administrador puede gestionar guías.'); return; }
-  const [maqs] = await Promise.all([opcionesMaquinas(), cargarListas()]);
-  formModal({
-    titulo: valores.id ? 'Editar guía ' + valores.id : 'Nueva guía de funcionamiento',
-    valores,
-    campos: [
-      { k: 'titulo', label: 'Título', req: true, full: true, ph: 'Principios de funcionamiento · …' },
-      { k: 'maquinaId', label: 'Máquina', type: 'select', opts: maqs, req: true, ph: 'Selecciona una máquina' },
-      { k: 'version', label: 'Versión', req: true, def: '0.1' },
-      { k: 'estado', label: 'Estado', type: 'select', opts: opcionesForm('estadosGuia', valores.estado), req: true },
-      { k: 'resumen', label: 'Resumen', type: 'textarea', rows: 2, max: 300, full: true },
-      { k: 'contenido', label: 'Contenido', type: 'textarea', rows: 12, req: true, full: true,
-        hint: 'Formato: "## Título de sección", "- viñeta" y **negrita**.' }
-    ],
-    onSubmit: async d => {
-      const r = await call('guardarGuia', { ...d, id: valores.id || '' });
-      toast(valores.id ? 'Guía actualizada' : 'Guía creada');
-      go('guia', { id: r.id });
-    }
-  });
-}
-
 function leerArchivo(f) {
   const max = (CFG.maxArchivoMb || 10) * 1024 * 1024;
   const ext = (f.name.split('.').pop() || '').toLowerCase();
@@ -920,35 +881,6 @@ function liberarArchivo() {
   if (!S.blobUrl) return;
   const u = S.blobUrl; S.blobUrl = null;
   setTimeout(() => URL.revokeObjectURL(u), 60000); // da tiempo a la pestaña nueva o la descarga
-}
-
-async function formDocumento(valores = {}) {
-  if (!can('admin')) { toast('Solo el administrador puede gestionar documentos.'); return; }
-  const [maqs] = await Promise.all([opcionesMaquinas(), cargarListas()]);
-  formModal({
-    titulo: valores.id ? 'Editar documento ' + valores.id : 'Nuevo documento',
-    valores,
-    campos: [
-      { k: 'titulo', label: 'Título', req: true, full: true },
-      { k: 'maquinaId', label: 'Máquina', type: 'select', opts: maqs, req: true, ph: 'Selecciona una máquina' },
-      { k: 'tipo', label: 'Tipo', type: 'select', opts: opcionesForm('tiposDoc', valores.tipo), req: true },
-      { k: 'version', label: 'Versión', def: '1.0' },
-      { k: 'archivo', label: valores.archivo ? 'Reemplazar archivo' : 'Archivo', type: 'file', full: true,
-        accept: (CFG.extensiones || []).map(x => '.' + x).join(','),
-        hint: (valores.archivo ? `Archivo actual: ${valores.nombreArchivo || 'adjunto'}. Adjunta otro solo si quieres reemplazarlo. ` : '') +
-          `PDF, imágenes, Office o DWG, hasta ${CFG.maxArchivoMb || 10} MB. Se guarda en el repositorio protegido de Drive.` },
-      { k: 'url', label: 'Enlace externo', type: 'url', full: true, ph: 'https:\/\/…', hint: 'Opcional. Úsalo solo para documentos que viven fuera del repositorio.' }
-    ],
-    cargando: 'Subiendo…',
-    onSubmit: async d => {
-      const f = d.archivo; delete d.archivo;
-      const datos = { ...d, id: valores.id || '' };
-      if (f && f.size) datos.archivo = await leerArchivo(f);
-      await call('guardarDocumento', datos);
-      toast(valores.id ? 'Documento actualizado' : 'Documento creado');
-      refrescar();
-    }
-  });
 }
 
 /* ---------- Reuniones ---------- */
