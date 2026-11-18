@@ -10,7 +10,7 @@ caché, listas, validación de archivos, permisos, asistente y plantillas.
 | Archivo añadido | Responsabilidad |
 |---|---|
 | `document_permissions.test.js` | Denegación de lector/editor sin efectos y creación/edición permitida a administrador. |
-| `session_revocation.test.js` | Revocación con índice truncado/ausente, rol vigente, desactivación, eliminación, demo apagada y claves heredadas del prototipo. |
+| `session_revocation.test.js` | Revocación con índice truncado/ausente, rol vigente, desactivación, eliminación, demo habilitada por defecto, apagado explícito, prioridad de MODO_DEMO y claves heredadas del prototipo. |
 | `calendar_privacy.test.js` | Dos identidades y administrador; no leer ni serializar metadatos de eventos ajenos. |
 | `initialization_security.test.js` | Guarda de identidad antes de acceder a recursos; identidad ausente o distinta se rechaza. |
 | `id_reservation.test.js` | Ejecuciones separadas reservan antes de insertar; no reutilización, filas manuales, caché antigua y contadores inválidos. |

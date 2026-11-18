@@ -75,10 +75,28 @@ test('el token demo vigente expira cuando se apagan las cuentas demo', () => {
   assert.strictEqual(resultado(actual.api(token, 'maquinas')).ok, false);
 });
 
-test('sin activación explícita no se permite iniciar sesión demo', () => {
-  const { app, servicios } = backend();
-  servicios.properties.delete('DEMO_ACCESS_ENABLED');
-  assert.match(resultado(app.login('admin@demo.cl')).error, /deshabilitadas/);
+test('el acceso demo está habilitado por defecto salvo propiedad false exacta', () => {
+  for (const valor of [null, '', 'true', 'false', 'FALSE', 'otro']) {
+    const { app, servicios } = backend();
+    if (valor === null) servicios.properties.delete('DEMO_ACCESS_ENABLED');
+    else servicios.properties.set('DEMO_ACCESS_ENABLED', valor);
+    const acceso = iniciar(app, 'admin@demo.cl');
+    assert.strictEqual(acceso.ok, valor !== 'false', `Propiedad: ${valor}`);
+    if (acceso.ok) assert.strictEqual(resultado(app.validarSesion(acceso.token)).ok, true);
+    else assert.match(acceso.error, /deshabilitadas/);
+  }
+});
+
+test('MODO_DEMO apagado bloquea ingreso y sesión previa sin importar la propiedad', () => {
+  for (const valor of [null, 'true', 'false']) {
+    const { app, servicios } = backend();
+    const token = iniciar(app, 'admin@demo.cl').token;
+    if (valor === null) servicios.properties.delete('DEMO_ACCESS_ENABLED');
+    else servicios.properties.set('DEMO_ACCESS_ENABLED', valor);
+    app.APP.MODO_DEMO = false;
+    assert.match(iniciar(app, 'admin@demo.cl').error, /deshabilitadas/);
+    assert.strictEqual(resultado(app.validarSesion(token)).ok, false);
+  }
 });
 
 test('roles heredados del prototipo y acciones no registradas se rechazan', () => {
