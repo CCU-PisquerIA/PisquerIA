@@ -5,62 +5,75 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 function interfaz({ administrador = false, guia = {} } = {}) {
-  const formularios = [], mensajes = [], enlaces = [], llamadas = [];
+  const formularios = [], mensajes = [], llamadas = [];
   const contexto = {
     call: async (accion, datos) => {
       llamadas.push({ accion, datos });
-      return accion === 'guia' ? guia : [];
+      return accion === 'guia' ? guia : { id: 'GUI-009' };
     },
     can: () => administrador,
-    esc: (valor) => String(valor || '').replace(/[&<>"']/g, c => ({
+    esc: (valor) => String(valor == null ? '' : valor).replace(/[&<>"']/g, c => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     })[c]),
-    ic: () => '', badgeEstado: () => '', md: () => '',
-    linkDoc: (doc) => { enlaces.push(doc.id); return '<button>Consultar</button>'; },
-    opcionesMaquinas: async () => [], cargarListas: async () => {}, opcionesForm: () => [],
+    ic: () => '',
+    opcionesMaquinas: async () => [['DEM-101', 'Transportador']], cargarListas: async () => {}, opcionesForm: () => [],
     formModal: (opciones) => formularios.push(opciones), toast: (mensaje) => mensajes.push(mensaje),
-    CFG: {}, go: () => {}, refrescar: () => {}, leerArchivo: async () => ({})
+    CFG: { extensiones: ['pdf'], maxArchivoMb: 10 }, go: () => {}, refrescar: () => {},
+    leerArchivo: async (f) => ({ nombre: f.name, base64: 'JVBERg==' })
   };
   vm.createContext(contexto);
   const fuente = fs.readFileSync(path.join(__dirname, '../BibliotecaUI.html'), 'utf8');
   vm.runInContext(fuente.replace(/^<script>\s*/, '').replace(/<\/script>\s*$/, ''), contexto);
-  return { contexto, formularios, mensajes, enlaces, llamadas };
+  return { contexto, formularios, mensajes, llamadas };
 }
 
-test('consulta transversal muestra revisión, documento y texto escapado sin enlace a máquina inexistente', async () => {
+test('la ficha muestra máquina, resumen y el botón del visor con texto escapado', async () => {
   const e = interfaz({ guia: {
-    id: 'GUI-001', titulo: '<img src=x>', alcance: 'Línea ficticia 3',
-    revisionTecnica: 'En revisión', documento: { id: 'DOC-001', titulo: 'Material ficticio', version: '0.1' }
+    id: 'GUI-001', titulo: '<img src=x>', maquinaId: 'DEM-101', maquinaNombre: 'Transportador', area: 'Envasado',
+    resumen: 'Resumen ficticio', archivo: true, nombreArchivo: 'guia.pdf', tamano: '2048'
   } });
   const html = await e.contexto.vistaGuiaDocumental('GUI-001');
-  assert.match(html, /Transversal \/ línea · Línea ficticia 3/);
-  assert.match(html, /Revisión técnica: En revisión/);
-  assert.match(html, /no acredita aprobación para uso operacional/);
   assert.match(html, /&lt;img src=x&gt;/);
-  assert.doesNotMatch(html, /data-go="maquina"|data-act="editarGuia"/);
-  assert.deepEqual(e.enlaces, ['DOC-001']);
+  assert.match(html, /data-go="maquina" data-id="DEM-101"/);
+  assert.match(html, /Resumen ficticio/);
+  assert.match(html, /guia\.pdf<\/strong> · 2 KB/);
+  assert.match(html, /data-act="verGuia" data-id="GUI-001"/);
+  assert.doesNotMatch(html, /data-act="editarGuia"/);
 });
 
-test('vínculo inexistente tiene mensaje de recuperación y no genera botón de archivo', async () => {
-  const e = interfaz({ guia: { id: 'GUI-001', documentoId: 'DOC-AUSENTE', documento: null } });
-  assert.match(await e.contexto.vistaGuiaDocumental('GUI-001'), /Avisa a un administrador/);
-  assert.equal(e.enlaces.length, 0);
+test('una guía sin archivo lo indica y no ofrece el visor', async () => {
+  const e = interfaz({ guia: { id: 'GUI-002', titulo: 'T', maquinaId: 'DEM-101', archivo: false } });
+  const html = await e.contexto.vistaGuiaDocumental('GUI-002');
+  assert.match(html, /aún no tiene un archivo adjunto/);
+  assert.doesNotMatch(html, /data-act="verGuia"/);
 });
 
-test('formularios conservan la autorización y ofrecen clasificación y revisión separadas', async () => {
+test('el formulario pide título, máquina, resumen y archivo opcional, y lo envía al servidor', async () => {
   const lector = interfaz();
   await lector.contexto.formGuia();
-  await lector.contexto.formDocumento();
   assert.equal(lector.formularios.length, 0);
   assert.equal(lector.llamadas.length, 0);
-  assert.equal(lector.mensajes.length, 2);
+
   const admin = interfaz({ administrador: true });
   await admin.contexto.formGuia();
+  const { campos, onSubmit } = admin.formularios[0];
+  assert.deepEqual(Array.from(campos, c => c.k), ['titulo', 'maquinaId', 'resumen', 'archivo']);
+  assert.equal(campos.find(c => c.k === 'maquinaId').req, true);
+  assert.equal(campos.find(c => c.k === 'resumen').req, true);
+  assert.equal(campos.find(c => c.k === 'archivo').req, undefined);
+
+  await onSubmit({ titulo: 'T', maquinaId: 'DEM-101', resumen: 'R', archivo: { name: 'g.pdf', size: 4 } });
+  const envio = admin.llamadas.find(l => l.accion === 'guardarGuia').datos;
+  assert.equal(envio.archivo.nombre, 'g.pdf');
+  assert.equal(envio.id, '');
+});
+
+test('el formulario de documentos conserva la autorización', async () => {
+  const lector = interfaz();
+  await lector.contexto.formDocumento();
+  assert.equal(lector.formularios.length, 0);
+  assert.equal(lector.mensajes.length, 1);
+  const admin = interfaz({ administrador: true });
   await admin.contexto.formDocumento();
-  const campos = admin.formularios[0].campos;
-  assert.ok(campos.some(c => c.k === 'documentoId'));
-  assert.ok(campos.some(c => c.k === 'revisionTecnica'));
-  assert.ok(campos.some(c => c.k === 'estado'));
-  assert.equal(campos.find(c => c.k === 'maquinaId').req, undefined);
-  assert.ok(admin.formularios[1].campos.some(c => c.k === 'alcance'));
+  assert.ok(admin.formularios[0].campos.some(c => c.k === 'alcance'));
 });

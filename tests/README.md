@@ -21,10 +21,11 @@ Los helpers se documentan en `helpers/README.md`.
 
 ## Biblioteca documental
 
-`guide_documents.test.js` valida por API asociación, clasificación transversal,
-estado técnico, visibilidad y protección de referencias con registros ficticios.
+`guias_archivo.test.js` valida por API el esquema de Guías (título, máquina, resumen y
+archivo en Drive simulado): subida, entrega sin exponer el `fileId`, archivo opcional,
+reemplazo y eliminación con papelera, campos obligatorios, permisos y hoja sin migrar.
 `guide_ui.test.js` ejecuta el módulo de biblioteca en un contexto JavaScript aislado:
-comprueba escape de texto, mensajes ante archivo ausente y formularios por rol.
+comprueba escape de texto, ficha con y sin archivo y formularios por rol.
 No sustituye una revisión visual o una prueba completa en navegador.
 
 `metadatos_sheets.test.js` verifica que la migración agregue también la columna

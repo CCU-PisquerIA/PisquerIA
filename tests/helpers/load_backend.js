@@ -64,7 +64,6 @@ function loadBackend(overrides = {}) {
   ROLES,
   ESQUEMA,
   ACCIONES,
-  ESTADOS_GUIA,
   ESTADOS_TAREA,
   PRIORIDADES,
   doGet,
@@ -103,6 +102,8 @@ function loadBackend(overrides = {}) {
   eliminarOpcion_,
   guardarMaquina_,
   guardarGuia_,
+  verGuia_,
+  archivoGuia_,
   siguienteId_,
   exigirInicializacion_
 });

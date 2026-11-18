@@ -311,7 +311,7 @@ const demoBanner = () => CFG.demo
   ? '<div class="notice"><b>Solo demostración.</b> Datos y documentos ficticios. No utilizar para operar, mantener o intervenir equipos.</div>' : '';
 
 const badgeClase = c => `<span class="badge ${c === 'A' ? 'b-pink' : c === 'B' ? 'b-gray' : 'b-blue'}">Clase ${esc(c)}</span>`;
-const badgeEstado = e => `<span class="badge ${e === 'Publicada' ? 'b-green' : e === 'En revisión' ? 'b-amber' : 'b-pink'}">${esc(e)}</span>`;
+const badgeArchivo = g => g.archivo ? '<span class="badge b-green">Con archivo</span>' : '<span class="badge b-gray">Sin archivo</span>';
 const badgeRol = r => `<span class="badge ${r === 'admin' ? 'b-pink' : r === 'editor' ? 'b-blue' : 'b-gray'}">${esc(ROL_TXT[r] || r)}</span>`;
 const btnIcon = (act, id, i, t) => `<button class="icon-btn" data-act="${act}" data-id="${esc(id)}" title="${esc(t)}">${ic(i, 18)}</button>`;
 
@@ -326,11 +326,10 @@ function cardMaquina(m) {
 
 function cardGuia(g) {
   return `<article class="card item" data-go="guia" data-id="${esc(g.id)}">
-    <div class="item-top"><span class="code">${esc(g.id)}</span>${badgeEstado(g.estado)}</div>
+    <div class="item-top"><span class="code">${esc(g.id)}</span>${badgeArchivo(g)}</div>
     <h3>${esc(g.titulo)}</h3>
-    <p class="desc">${esc(g.area)} · ${esc(g.maquinaId || g.alcance)}</p>
-    <p class="muted sm">Revisión técnica: ${esc(g.revisionTecnica || 'Pendiente de revisión')}</p>
-    <div class="item-foot"><span>Versión ${esc(g.version)}</span><span class="lnk">Consultar guía →</span></div>
+    <p class="desc">${esc(g.resumen)}</p>
+    <div class="item-foot"><span>${esc(g.area)} · ${esc(g.maquinaId)}</span><span class="lnk">Consultar guía →</span></div>
   </article>`;
 }
 
@@ -362,10 +361,10 @@ function tablaMaquinas(lista) {
 
 function tablaGuias(lista) {
   return `<div class="card table-wrap"><table class="tbl tbl-lista">
-    <thead><tr><th>Guía</th><th>Área</th><th>Versión</th><th>Estado</th><th>Revisión técnica</th><th>Actualizada</th><th></th></tr></thead>
+    <thead><tr><th>Guía</th><th>Área</th><th>Archivo</th><th>Actualizada</th><th></th></tr></thead>
     <tbody>${lista.map(g => `<tr data-go="guia" data-id="${esc(g.id)}" tabindex="0">
       <td><div class="celda-nom"><div class="tile-s t-green">${ic('guide', 18)}</div><div><b>${esc(g.titulo)}</b><span class="code">${esc(g.id)} · ${esc(g.maquinaNombre || g.maquinaId)}</span></div></div></td>
-      <td>${esc(g.area)}</td><td>${esc(g.version)}</td><td>${badgeEstado(g.estado)}</td><td>${esc(g.revisionTecnica || 'Pendiente de revisión')}</td><td class="muted">${fechaCorta(g.actualizado)}</td>
+      <td>${esc(g.area)}</td><td>${badgeArchivo(g)}</td><td class="muted">${fechaCorta(g.actualizado)}</td>
       <td class="row-acts"><span class="lnk">Consultar →</span></td></tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -391,7 +390,7 @@ function tablaDocs(docs, conMaquina = true) {
     </tr>`).join('')}</tbody></table></div>`;
 }
 
-// Formato simple para el contenido de las guías: "## Título", "- viñeta", **negrita**
+// Formato simple para las respuestas del asistente: "## Título", "- viñeta", **negrita**
 function md(t) {
   let out = '', lista = false;
   esc(t).split('\n').forEach(l => {
@@ -559,7 +558,7 @@ const VIEWS = {
       </div>
 
       <div class="sec-head"><h2>Guías de funcionamiento</h2>${can('admin') ? `<button class="btn btn-sm" data-act="nuevaGuia" data-id="${esc(m.id)}">${ic('plus', 16)} Nueva guía</button>` : ''}</div>
-      <div class="grid3">${d.guias.map(cardGuia).join('') || vacio('Esta máquina aún no tiene guías publicadas.')}</div>
+      <div class="grid3">${d.guias.map(cardGuia).join('') || vacio('Esta máquina aún no tiene guías.')}</div>
 
       <div class="sec-head"><h2>Documentación</h2>${can('admin') ? `<button class="btn btn-sm" data-act="nuevoDocumento" data-id="${esc(m.id)}">${ic('plus', 16)} Nuevo documento</button>` : ''}</div>
       ${tablaDocs(d.documentos, false)}`;
@@ -568,11 +567,10 @@ const VIEWS = {
   async guias() {
     const [lista] = await Promise.all([call('guias'), cargarListas()]);
     const nueva = can('admin') ? `<button class="btn btn-primary" data-act="nuevaGuia">${ic('plus', 18)} Nueva guía</button>` : '';
-    const html = head('Biblioteca técnica', 'Guías de Funcionamiento', 'Principios de funcionamiento por máquina o alcance transversal.', nueva) + `
+    const html = head('Biblioteca técnica', 'Guías de Funcionamiento', 'Guías de funcionamiento de cada máquina, con su archivo en el repositorio protegido.', nueva) + `
       <div class="toolbar">
-        <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar guía, máquina o línea"></div>
+        <div class="field-s">${ic('search', 18)}<input id="fQ" placeholder="Buscar guía o máquina"></div>
         <select id="fArea"><option value="">Todas las áreas</option>${opcionesFiltro('areas', lista.map(g => g.area))}</select>
-        ${can('editor') ? `<select id="fEst"><option value="">Todos los estados</option>${opcionesFiltro('estadosGuia', lista.map(g => g.estado))}</select>` : ''}
         ${selectorVista('gui')}
       </div>
       <div id="grid"></div>`;
@@ -580,12 +578,12 @@ const VIEWS = {
       html,
       after() {
         const filtrar = () => {
-          const q = norm($('#fQ').value), a = $('#fArea').value, e = $('#fEst') ? $('#fEst').value : '';
-          const r = lista.filter(g => (!a || g.area === a) && (!e || g.estado === e) && (!q || norm(g.id + ' ' + g.titulo + ' ' + g.maquinaId + ' ' + g.maquinaNombre + ' ' + g.alcance).includes(q)));
+          const q = norm($('#fQ').value), a = $('#fArea').value;
+          const r = lista.filter(g => (!a || g.area === a) && (!q || norm(g.id + ' ' + g.titulo + ' ' + g.resumen + ' ' + g.maquinaId + ' ' + g.maquinaNombre).includes(q)));
           $('#grid').innerHTML = !r.length ? `<div class="grid3">${vacio('No hay guías que coincidan con el filtro.')}</div>`
             : vistaDe('gui') === 'lista' ? tablaGuias(r) : `<div class="grid3">${r.map(cardGuia).join('')}</div>`;
         };
-        ['#fQ', '#fArea', '#fEst'].forEach(s => $(s) && $(s).addEventListener('input', filtrar));
+        ['#fQ', '#fArea'].forEach(s => $(s).addEventListener('input', filtrar));
         enlazarVista('gui', filtrar);
         filtrar();
       }
@@ -620,9 +618,9 @@ const VIEWS = {
   async perfil() {
     const u = await call('perfil');
     const permisos = {
-      lector: ['Consultar máquinas, guías publicadas y documentos', 'Agendar reuniones y gestionar tus tareas', 'Autenticación con Google Workspace'],
-      editor: ['Todo lo del lector', 'Crear y editar máquinas, guías y documentos', 'Ver guías en borrador y en revisión'],
-      admin: ['Todo lo del editor', 'Eliminar registros', 'Crear usuarios y gestionar roles']
+      lector: ['Consultar máquinas, guías y documentos', 'Agendar reuniones y gestionar tus tareas', 'Autenticación con Google Workspace'],
+      editor: ['Todo lo del lector', 'Crear y editar máquinas'],
+      admin: ['Todo lo del editor', 'Crear y editar guías y documentos', 'Eliminar registros', 'Crear usuarios y gestionar roles']
     }[u.rol] || [];
     return {
       html: head('Mi cuenta', 'Mi Perfil', 'Tus datos, área y preferencias de cuenta.') + `
@@ -883,6 +881,27 @@ function liberarArchivo() {
   setTimeout(() => URL.revokeObjectURL(u), 60000); // da tiempo a la pestaña nueva o la descarga
 }
 
+// Visor común de Documentación y Guías: PDF e imágenes se ven en un modal; el resto se descarga.
+async function verArchivo(accion, id, etiqueta) {
+  toast('Cargando archivo…');
+  const a = await call(accion, { id });
+  const bin = atob(a.base64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  liberarArchivo();
+  const url = S.blobUrl = URL.createObjectURL(new Blob([bytes], { type: a.mime }));
+  const esPdf = a.mime === 'application/pdf', esImg = /^image\/(png|jpeg|webp)$/.test(a.mime);
+  if (!esPdf && !esImg) {
+    const l = document.createElement('a'); l.href = url; l.download = a.nombre;
+    document.body.appendChild(l); l.click(); l.remove();
+    toast('Descarga iniciada: ' + a.nombre);
+    return;
+  }
+  abrirModal(`<div class="m-head"><div><h2>${esc(a.nombre)}</h2><p class="muted">${esc(etiqueta)} ${esc(id)} · repositorio protegido</p></div>
+      <button type="button" class="icon-btn" data-close title="Cerrar">${ic('x')}</button></div>
+    <div class="visor">${esPdf ? `<iframe src="${url}" title="${esc(a.nombre)}"></iframe>` : `<img src="${url}" alt="${esc(a.nombre)}">`}</div>
+    <div class="m-foot"><a class="btn" href="${url}" target="_blank" rel="noopener">${ic('ext', 16)} Abrir en pestaña</a><a class="btn btn-primary" href="${url}" download="${esc(a.nombre)}">Descargar</a></div>`, 'm-visor');
+}
+
 /* ---------- Reuniones ---------- */
 function inicioGrilla(y, m) { const p = new Date(y, m, 1); return new Date(y, m, 1 - (p.getDay() + 6) % 7); }
 const eventosMes = () => S.mesCache[S.cal.y + '-' + S.cal.m] || [];
@@ -1090,25 +1109,8 @@ const ACT = {
     if (!await confirmar('Eliminar guía', `Se eliminará la guía ${id}. Esta acción no se puede deshacer.`)) return;
     await call('eliminarGuia', { id }); toast('Guía eliminada'); go('guias');
   },
-  async verDocumento(id) {
-    toast('Cargando documento…');
-    const a = await call('archivoDocumento', { id });
-    const bin = atob(a.base64), bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    liberarArchivo();
-    const url = S.blobUrl = URL.createObjectURL(new Blob([bytes], { type: a.mime }));
-    const esPdf = a.mime === 'application/pdf', esImg = /^image\/(png|jpeg|webp)$/.test(a.mime);
-    if (!esPdf && !esImg) {
-      const l = document.createElement('a'); l.href = url; l.download = a.nombre;
-      document.body.appendChild(l); l.click(); l.remove();
-      toast('Descarga iniciada: ' + a.nombre);
-      return;
-    }
-    abrirModal(`<div class="m-head"><div><h2>${esc(a.nombre)}</h2><p class="muted">Documento ${esc(id)} · repositorio protegido</p></div>
-        <button type="button" class="icon-btn" data-close title="Cerrar">${ic('x')}</button></div>
-      <div class="visor">${esPdf ? `<iframe src="${url}" title="${esc(a.nombre)}"></iframe>` : `<img src="${url}" alt="${esc(a.nombre)}">`}</div>
-      <div class="m-foot"><a class="btn" href="${url}" target="_blank" rel="noopener">${ic('ext', 16)} Abrir en pestaña</a><a class="btn btn-primary" href="${url}" download="${esc(a.nombre)}">Descargar</a></div>`, 'm-visor');
-  },
+  verDocumento(id) { return verArchivo('archivoDocumento', id, 'Documento'); },
+  verGuia(id) { return verArchivo('archivoGuia', id, 'Guía'); },
   nuevoDocumento(maquinaId) { return formDocumento({ maquinaId: maquinaId || '' }); },
   async editarDocumento(id) { return formDocumento(await call('documento', { id })); },
   async eliminarDocumento(id) {
@@ -1202,7 +1204,7 @@ function cambiarTema() {
 /* ---------- Asistente (Gemini) ---------- */
 // Avatar "Racimo amigo": la uva del frente del racimo del logo, con cara
 const AVATAR = '<svg viewBox="0 0 256 256" aria-hidden="true" focusable="false"><circle cx="128" cy="128" r="128" fill="#fff"/><g transform="translate(122 132) scale(.72) translate(-128 -128)"><path fill="#9AB43A" d="M40.50,104.29 A48,42 -25 0 1 127.50,63.71 A48,42 -25 0 1 40.50,104.29 Z"/><path fill="#5E8F2E" d="M150,70 A40,40 0 0 1 206,30 A40,40 0 0 1 150,70 Z"/><path fill="#9A1A48" d="M57.28,162.59 A84,76 -10 0 1 222.72,133.41 A84,76 -10 0 1 57.28,162.59 Z"/><g fill="#fff"><ellipse cx="112" cy="146" rx="12" ry="17"/><ellipse cx="164" cy="138" rx="12" ry="17"/><path d="M112,180 A34,34 0 0 0 174,170 A46,30 -8 0 1 112,180 Z"/></g></g></svg>';
-const SUGERENCIAS = ['¿Qué máquinas hay en Envasado?', '¿Qué guías de funcionamiento están publicadas?', 'Resume mis tareas pendientes', '¿Dónde encuentro la ficha técnica de una máquina?'];
+const SUGERENCIAS = ['¿Qué máquinas hay en Envasado?', '¿Qué guías de funcionamiento hay?', 'Resume mis tareas pendientes', '¿Dónde encuentro la ficha técnica de una máquina?'];
 
 function chatAbierto() { return !$('#chatPanel').classList.contains('hidden'); }
 
