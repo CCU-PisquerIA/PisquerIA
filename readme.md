@@ -12,7 +12,7 @@ El proyecto se desarrolla en VS Code, se versiona en este repositorio y se sincr
 |---|---|
 | **Inicio** | Saludo personalizado, buscador y acceso a los seis módulos. |
 | **Máquinas** | Catálogo de equipos por área, clase y estado. Vista en tarjetas o en listado. |
-| **Guías de Funcionamiento** | Guías por máquina con versión y estado (Borrador, En revisión, Publicada). Vista en tarjetas o en listado. |
+| **Guías de Funcionamiento** | Guías por máquina con título, resumen y un archivo (opcional) guardado en Google Drive, con el mismo visor y descarga que Documentación. Todas las guías son visibles para todos los roles. Vista en tarjetas o en listado. |
 | **Documentación** | Manuales, fichas técnicas y procedimientos asociados a cada máquina. |
 | **Reuniones** | Vista mensual de reuniones en las que el usuario participa o figura como creador. Agendar reuniones con invitación automática y enlace de Meet. |
 | **Tareas** | Tablero Pendiente, En curso y Completada, con responsable, prioridad, vencimiento y aviso por correo. |
@@ -23,8 +23,8 @@ El proyecto se desarrolla en VS Code, se versiona en este repositorio y se sincr
 
 | Rol | Puede |
 |---|---|
-| **Lector** | Consultar máquinas, guías publicadas y documentos; agendar reuniones; gestionar sus tareas y preferencias. |
-| **Editor** | Todo lo del lector, más crear y editar máquinas y ver guías en borrador o en revisión. |
+| **Lector** | Consultar máquinas, guías y documentos; agendar reuniones; gestionar sus tareas y preferencias. |
+| **Editor** | Todo lo del lector, más crear y editar máquinas. |
 | **Administrador** | Todo lo del editor, más crear/editar guías y documentos, eliminar registros y administrar usuarios y roles. |
 
 Las cuentas creadas con **Registrarse** parten como Lector; un administrador puede subirles el rol.
@@ -53,9 +53,8 @@ mediante `.claspignore`, junto con la documentación y los archivos de desarroll
 Consulta [SEGURIDAD_Y_MODULOS.md](SEGURIDAD_Y_MODULOS.md) para responsabilidades,
 configuración y límites, y [tests/README.md](tests/README.md) para la verificación local.
 
-La asociación guía/documento, los materiales transversales y la migración de columnas
-se describen en [BIBLIOTECA_DOCUMENTAL.md](BIBLIOTECA_DOCUMENTAL.md). Las fichas
-distinguen publicación para consulta de revisión técnica pendiente.
+El esquema de Guías y Documentos, el repositorio de archivos en Drive y la migración de
+columnas se describen en [BIBLIOTECA_DOCUMENTAL.md](BIBLIOTECA_DOCUMENTAL.md).
 
 ---
 
@@ -147,8 +146,8 @@ Los créditos y la versión del modal **Acerca de este sistema** se editan en la
 |---|---|
 | `Usuarios` | Cuentas, rol, estado y preferencias. No almacena contraseñas; la identidad corporativa se verifica con Google. |
 | `Maquinas` | Catálogo de equipos. |
-| `Guias` | Guías de funcionamiento y su contenido. |
-| `Documentos` | Enlaces a manuales y fichas técnicas. |
+| `Guias` | Guías de funcionamiento: título, máquina, resumen y metadatos del archivo en Drive. |
+| `Documentos` | Manuales y fichas técnicas: archivo en Drive o enlace externo. |
 | `Tareas` | Tareas, responsables y estados. |
 | `Registro` | Bitácora de acciones (ingresos, cambios, eliminaciones). |
 

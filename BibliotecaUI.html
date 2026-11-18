@@ -1,54 +1,63 @@
 <script>
+// Peso legible de un archivo a partir de los bytes guardados en la hoja
+function pesoArchivo(bytes) {
+  const n = Number(bytes) || 0;
+  if (!n) return '';
+  return n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' KB' : (n / 1024 / 1024).toFixed(1).replace('.', ',') + ' MB';
+}
+
+// Ficha de la guía: título, máquina, resumen y su archivo en el repositorio protegido
 async function vistaGuiaDocumental(id) {
-    const g = await call('guia', { id });
-    const acts = [
-      can('admin') && `<button class="btn" data-act="editarGuia" data-id="${esc(g.id)}">${ic('edit', 17)} Editar</button>`,
-      can('admin') && `<button class="btn btn-danger" data-act="eliminarGuia" data-id="${esc(g.id)}">${ic('trash', 17)} Eliminar</button>`
-    ].filter(Boolean).join('');
-    return `
-      <a class="back" data-go="guias">${ic('back', 18)} Volver a las guías</a>
-      <article class="card doc-view">
-        <div class="item-top"><span class="code">${esc(g.id)}</span><div class="acts">${badgeEstado(g.estado)}</div></div>
-        <h1>${esc(g.titulo)}</h1>
-        <div class="meta">${g.maquinaId ? `${esc(g.area)} · <a class="lnk" data-go="maquina" data-id="${esc(g.maquinaId)}">${esc(g.maquinaId)} · ${esc(g.maquinaNombre)}</a>` : `Transversal / línea · ${esc(g.alcance)}`}<br>
-          Versión ${esc(g.version)} · Actualizada ${esc(g.actualizado)}${g.autor ? ' · ' + esc(g.autor) : ''}</div>
-        ${g.resumen ? `<p class="lead">${esc(g.resumen)}</p>` : ''}
-        <div class="notice-sm" role="note"><strong>Revisión técnica: ${esc(g.revisionTecnica)}</strong><br>
-          Disponible para consulta. Su publicación no acredita aprobación para uso operacional.</div>
-        ${g.documento ? `<section aria-label="Documento de consulta"><h2>Documento de consulta</h2>
-          <p>${esc(g.documento.titulo)} · Versión ${esc(g.documento.version)}</p>${linkDoc(g.documento)}</section>`
-          : `<p class="muted">${g.documentoId ? 'El documento asociado no está disponible. Avisa a un administrador.' : 'Aún no se ha asociado un documento de consulta.'}</p>`}
-        <div class="prose">${md(g.contenido)}</div>
-        ${acts ? `<div class="acts" style="margin-top:28px">${acts}</div>` : ''}
-      </article>`;
-  }
+  const g = await call('guia', { id });
+  const acts = [
+    can('admin') && `<button class="btn" data-act="editarGuia" data-id="${esc(g.id)}">${ic('edit', 17)} Editar</button>`,
+    can('admin') && `<button class="btn btn-danger" data-act="eliminarGuia" data-id="${esc(g.id)}">${ic('trash', 17)} Eliminar</button>`
+  ].filter(Boolean).join('');
+  const peso = pesoArchivo(g.tamano);
+  return `
+    <a class="back" data-go="guias">${ic('back', 18)} Volver a las guías</a>
+    <article class="card doc-view">
+      <div class="item-top"><span class="code">${esc(g.id)}</span></div>
+      <h1>${esc(g.titulo)}</h1>
+      <div class="meta">${esc(g.area)} · <a class="lnk" data-go="maquina" data-id="${esc(g.maquinaId)}">${esc(g.maquinaId)} · ${esc(g.maquinaNombre)}</a><br>
+        Actualizada ${esc(g.actualizado)}${g.autor ? ' · ' + esc(g.autor) : ''}</div>
+      ${g.resumen ? `<p class="lead">${esc(g.resumen)}</p>` : ''}
+      <section class="notice-sm" aria-label="Archivo de la guía">
+        ${g.archivo
+          ? `<strong>${esc(g.nombreArchivo || 'Archivo adjunto')}</strong>${peso ? ' · ' + esc(peso) : ''}<br>
+             <div class="acts" style="margin-top:10px"><button class="btn btn-sm btn-primary" data-act="verGuia" data-id="${esc(g.id)}">${ic('eye', 15)} Ver guía</button></div>`
+          : `Esta guía aún no tiene un archivo adjunto.${can('admin') ? ' Usa «Editar» para subirlo.' : ''}`}
+      </section>
+      ${acts ? `<div class="acts" style="margin-top:28px">${acts}</div>` : ''}
+    </article>`;
+}
 
 async function formGuia(valores = {}) {
   if (!can('admin')) { toast('Solo el administrador puede gestionar guías.'); return; }
-  const [maqs, documentos] = await Promise.all([opcionesMaquinas(), call('documentos'), cargarListas()]);
+  const maqs = await opcionesMaquinas();
   formModal({
     titulo: valores.id ? 'Editar guía ' + valores.id : 'Nueva guía de funcionamiento',
     valores,
     campos: [
       { k: 'titulo', label: 'Título', req: true, full: true, ph: 'Principios de funcionamiento · …' },
-      { k: 'maquinaId', label: 'Máquina (opcional para material transversal)', type: 'select', opts: maqs, ph: 'Transversal / línea' },
-      { k: 'alcance', label: 'Alcance transversal o línea', max: 120, full: true, hint: 'Obligatorio si no seleccionas máquina. Ejemplo: Línea 3.' },
-      { k: 'documentoId', label: 'Documento de consulta', type: 'select', opts: documentos.map(d => [d.id, d.titulo + ' · ' + (d.maquinaNombre || d.alcance || d.maquinaId)]), ph: 'Sin documento asociado', full: true },
-      { k: 'revisionTecnica', label: 'Revisión técnica', type: 'select', opts: ['Pendiente de revisión', 'En revisión'], def: 'Pendiente de revisión', hint: 'Independiente del estado de publicación.' },
-      { k: 'version', label: 'Versión', req: true, def: '0.1' },
-      { k: 'estado', label: 'Estado', type: 'select', opts: opcionesForm('estadosGuia', valores.estado), req: true },
-      { k: 'resumen', label: 'Resumen', type: 'textarea', rows: 2, max: 300, full: true },
-      { k: 'contenido', label: 'Contenido', type: 'textarea', rows: 12, req: true, full: true,
-        hint: 'Formato: "## Título de sección", "- viñeta" y **negrita**.' }
+      { k: 'maquinaId', label: 'Máquina', type: 'select', opts: maqs, req: true, ph: 'Selecciona una máquina', full: true },
+      { k: 'resumen', label: 'Resumen', type: 'textarea', rows: 3, max: 300, req: true, full: true },
+      { k: 'archivo', label: valores.archivo ? 'Reemplazar archivo' : 'Archivo', type: 'file', full: true,
+        accept: (CFG.extensiones || []).map(x => '.' + x).join(','),
+        hint: (valores.archivo ? `Archivo actual: ${valores.nombreArchivo || 'adjunto'}. Adjunta otro solo si quieres reemplazarlo. ` : 'Opcional: puedes subirlo después. ') +
+          `PDF, imágenes, Office o DWG, hasta ${CFG.maxArchivoMb || 10} MB. Se guarda en el repositorio protegido de Drive.` }
     ],
+    cargando: 'Subiendo…',
     onSubmit: async d => {
-      const r = await call('guardarGuia', { ...d, id: valores.id || '' });
+      const f = d.archivo; delete d.archivo;
+      const datos = { ...d, id: valores.id || '' };
+      if (f && f.size) datos.archivo = await leerArchivo(f);
+      const r = await call('guardarGuia', datos);
       toast(valores.id ? 'Guía actualizada' : 'Guía creada');
       go('guia', { id: r.id });
     }
   });
 }
-
 
 async function formDocumento(valores = {}) {
   if (!can('admin')) { toast('Solo el administrador puede gestionar documentos.'); return; }
@@ -59,7 +68,7 @@ async function formDocumento(valores = {}) {
     campos: [
       { k: 'titulo', label: 'Título', req: true, full: true },
       { k: 'maquinaId', label: 'Máquina (opcional para material transversal)', type: 'select', opts: maqs, ph: 'Transversal / línea' },
-      { k: 'alcance', label: 'Alcance transversal o línea', max: 120, full: true, hint: 'Obligatorio sin máquina. Debe coincidir con el alcance de la guía asociada.' },
+      { k: 'alcance', label: 'Alcance transversal o línea', max: 120, full: true, hint: 'Obligatorio si no seleccionas máquina. Ejemplo: Línea 3.' },
       { k: 'tipo', label: 'Tipo', type: 'select', opts: opcionesForm('tiposDoc', valores.tipo), req: true },
       { k: 'version', label: 'Versión', def: '1.0' },
       { k: 'archivo', label: valores.archivo ? 'Reemplazar archivo' : 'Archivo', type: 'file', full: true,
@@ -79,5 +88,4 @@ async function formDocumento(valores = {}) {
     }
   });
 }
-
 </script>

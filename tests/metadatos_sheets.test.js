@@ -99,14 +99,14 @@ test('reads are cached across executions and invalidated by writes', () => {
 test('large sheets are cached in chunks and read back intact', () => {
   const grande = 'Guía con acentos ñ y emoji 🍇 '.repeat(4000);
   const s = fakeServicios({ Guias: [
-    ['id', 'titulo', 'maquinaId', 'version', 'estado', 'resumen', 'contenido', 'autor', 'actualizado'],
-    ['GUI-001', 'Larga', 'DEM-101', '1.0', 'Publicada', '', grande, 'a', '2026-11-01']
+    ['id', 'titulo', 'maquinaId', 'resumen', 'autor', 'actualizado'],
+    ['GUI-001', 'Larga', 'DEM-101', grande, 'a', '2026-11-01']
   ] });
   loadBackend(s.overrides).exports.leer_('Guias');
   const trozos = [...s.cache.store.keys()].filter((k) => /^db_Guias_.*_\d+$/.test(k));
   assert.ok(trozos.length > 1, 'debe partirse en varios trozos');
   trozos.forEach((k) => assert.ok(Buffer.byteLength(s.cache.store.get(k), 'utf8') <= 100 * 1024, k));
-  const leido = loadBackend(s.overrides).exports.leer_('Guias')[0].contenido;
+  const leido = loadBackend(s.overrides).exports.leer_('Guias')[0].resumen;
   assert.strictEqual(s.sheets.Guias.lecturas, 1);
   assert.strictEqual(leido, grande);
 });

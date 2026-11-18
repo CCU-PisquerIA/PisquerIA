@@ -27,7 +27,7 @@ test('guardarGuia y guardarDocumento requieren admin y rechazan lector/editor si
     tokens[correo.split('@')[0]] = acceso.token;
   }
   const payloads = {
-    guardarGuia: { titulo: 'Guía ficticia', maquinaId: 'DEM-101', version: '1.0', estado: 'Publicada', contenido: 'Prueba' },
+    guardarGuia: { titulo: 'Guía ficticia', maquinaId: 'DEM-101', resumen: 'Prueba' },
     guardarDocumento: { titulo: 'Documento ficticio', maquinaId: 'DEM-101', tipo: 'Manual', url: 'https://ejemplo.test/manual', version: '1.0' }
   };
   for (const rol of ['lector', 'editor']) {
@@ -49,7 +49,7 @@ test('administrador crea y edita guías y metadatos documentales', () => {
   const { app, servicios } = backend();
   const token = resultado(app.login('admin@demo.cl')).token;
   const guia = {
-    titulo: 'Guía ficticia', maquinaId: 'DEM-101', version: '1.0', estado: 'Publicada', contenido: 'Contenido de prueba'
+    titulo: 'Guía ficticia', maquinaId: 'DEM-101', resumen: 'Resumen de prueba'
   };
   const creada = resultado(app.api(token, 'guardarGuia', guia));
   assert.strictEqual(creada.ok, true, creada.error);

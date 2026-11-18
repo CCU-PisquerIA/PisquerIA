@@ -36,7 +36,8 @@ test('without the Listas sheet the defaults are used and editing asks to run ini
   const app = loadBackend(s.overrides).exports;
   const l = app.listas_();
   assert.deepStrictEqual(Array.from(l.clases, (o) => o.nombre), ['A', 'B', 'C']);
-  assert.ok(l.estadosGuia.some((o) => o.nombre === 'Publicada'));
+  assert.ok(l.estadosMaquina.some((o) => o.nombre === 'Operativa'));
+  assert.strictEqual(l.estadosGuia, undefined, 'las guías ya no tienen estados');
   assert.strictEqual(app.listasAdmin_().configurada, false);
   assert.throws(() => app.guardarOpcion_({ lista: 'areas', nombre: 'Laboratorio' }, ADMIN), /inicializar\(\)/);
 });
@@ -73,10 +74,10 @@ test('renaming an option updates every record that uses it', () => {
 test('an option in use or a system option cannot be deleted', () => {
   const { app } = planilla();
   assert.throws(() => app.eliminarOpcion_({ id: opcion(app, 'areas', 'Destilación').id }, ADMIN), /la usan 2 máquinas/);
-  assert.throws(() => app.eliminarOpcion_({ id: opcion(app, 'estadosGuia', 'Publicada').id }, ADMIN), /no se puede eliminar/);
-  const pub = opcion(app, 'estadosGuia', 'Publicada');
-  assert.throws(() => app.guardarOpcion_({ lista: 'estadosGuia', id: pub.id, nombre: 'Aprobada' }, ADMIN), /no se puede renombrar/);
-  app.guardarOpcion_({ lista: 'estadosGuia', id: pub.id, nombre: 'Publicada', descripcion: 'visible para todos' }, ADMIN);
+  assert.throws(() => app.eliminarOpcion_({ id: opcion(app, 'estadosMaquina', 'Operativa').id }, ADMIN), /no se puede eliminar/);
+  const op = opcion(app, 'estadosMaquina', 'Operativa');
+  assert.throws(() => app.guardarOpcion_({ lista: 'estadosMaquina', id: op.id, nombre: 'Activa' }, ADMIN), /no se puede renombrar/);
+  app.guardarOpcion_({ lista: 'estadosMaquina', id: op.id, nombre: 'Operativa', descripcion: 'en funcionamiento' }, ADMIN);
 
   const libre = opcion(app, 'areas', 'Bodega');
   assert.strictEqual(libre.usos, 0);
@@ -92,5 +93,4 @@ test('editing a record keeps a value that is no longer in the list', () => {
   const fresco = loadBackend(s.overrides).exports;
   fresco.guardarMaquina_({ ...base, area: 'Área antigua' }, ADMIN);
   assert.throws(() => fresco.guardarMaquina_({ ...base, area: 'Otra inventada' }, ADMIN), /área válida/);
-  assert.throws(() => fresco.guardarGuia_({ titulo: 'T', maquinaId: 'DEM-101', version: '1', estado: 'Inventado', contenido: 'x' }, ADMIN), /Estado no válido/);
 });
